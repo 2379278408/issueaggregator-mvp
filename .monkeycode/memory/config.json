@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "mode": "append_only_with_prune",
+  "layers": [
+    {
+      "id": "L0",
+      "name": "atomic-memories",
+      "file": ".monkeycode/memory/l0.raw.jsonl",
+      "description": "原子级事实、偏好、任务上下文事件"
+    },
+    {
+      "id": "L1",
+      "name": "topic-summaries",
+      "file": ".monkeycode/memory/l1.summary.jsonl",
+      "description": "按主题聚合后的摘要事件"
+    },
+    {
+      "id": "L2",
+      "name": "global-profile",
+      "file": ".monkeycode/memory/l2.profile.jsonl",
+      "description": "全局长期画像与稳定协作偏好"
+    }
+  ],
+  "writePolicy": {
+    "allowAppend": true,
+    "allowPrune": true,
+    "allowInPlaceUpdate": false,
+    "allowHardDelete": false,
+    "pruneStrategy": "tombstone"
+  }
+}

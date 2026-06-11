@@ -1,0 +1,3 @@
+{"id":"bootstrap-l0-001","ts":"2026-06-11T00:00:00Z","op":"append","layer":"L0","category":"instruction","content":"用户要求初始化三层记忆机制，并使用只能新增与删减的存储策略。"}
+{"id":"l0-1781158760183","ts":"2026-06-11T06:19:20.183Z","op":"append","layer":"L0","content":"验证追加事件"}
+{"id":"l0-1781158760184","ts":"2026-06-11T06:19:20.184Z","op":"prune","layer":"L0","targetId":"bootstrap-l0-001","reason":"验证裁剪事件"}

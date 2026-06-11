@@ -1,0 +1,1 @@
+{"id":"bootstrap-l1-001","ts":"2026-06-11T00:00:00Z","op":"append","layer":"L1","topic":"memory-policy","content":"当前仓库启用三层记忆机制，记忆采用追加式写入与裁剪标记策略。"}
