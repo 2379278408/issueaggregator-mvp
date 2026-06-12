@@ -10,7 +10,11 @@ from pydantic import BaseModel, Field, field_validator
 
 
 RELATED_ID_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+FEEDBACK_ID_PATTERN = r"^fb_[a-f0-9]{12}$"
+BATCH_ID_PATTERN = r"^batch_[a-f0-9]{12}$"
+DRAFT_ID_PATTERN = r"^draft_[a-f0-9]{12}$"
 FeedbackType = Literal["bug", "feature", "enhancement", "question"]
+FEEDBACK_TYPES = {"bug", "feature", "enhancement", "question"}
 
 
 class FeedbackStatus(str, Enum):
@@ -37,10 +41,10 @@ class DraftStatus(str, Enum):
 
 class FeedbackCreatePayload(BaseModel):
     type: FeedbackType
-    related_id: str = Field(min_length=1)
-    raw_content: str = Field(min_length=1)
-    expected_behavior: str | None = None
-    actual_behavior: str | None = None
+    related_id: str = Field(min_length=1, max_length=64)
+    raw_content: str = Field(min_length=1, max_length=2000)
+    expected_behavior: str | None = Field(default=None, max_length=1200)
+    actual_behavior: str | None = Field(default=None, max_length=1200)
 
     @field_validator("related_id")
     @classmethod
@@ -58,9 +62,17 @@ class FeedbackCreatePayload(BaseModel):
             raise ValueError("raw_content cannot be empty")
         return normalized
 
+    @field_validator("expected_behavior", "actual_behavior")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
 
 class DraftBatchCreatePayload(BaseModel):
-    feedback_item_ids: list[str] = Field(min_length=1)
+    feedback_item_ids: list[str] = Field(min_length=1, max_length=50)
     confirm_mixed_related_ids: bool = False
 
     @field_validator("feedback_item_ids")
@@ -69,12 +81,14 @@ class DraftBatchCreatePayload(BaseModel):
         normalized = [item.strip() for item in value if item and item.strip()]
         if not normalized:
             raise ValueError("feedback_item_ids cannot be empty")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("feedback_item_ids cannot contain duplicates")
         return normalized
 
 
 class DraftUpdatePayload(BaseModel):
-    title: str = Field(min_length=1)
-    body_markdown: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=160)
+    body_markdown: str = Field(min_length=1, max_length=12000)
 
     @field_validator("title", "body_markdown")
     @classmethod

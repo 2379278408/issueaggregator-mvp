@@ -5,7 +5,8 @@ from fastapi import APIRouter
 from ..config import get_settings
 from ..responses import success_response
 
-router = APIRouter(prefix="/api", tags=["health"])
+settings = get_settings()
+router = APIRouter(prefix=settings.api_base_path, tags=["health"])
 
 
 @router.get("/health")

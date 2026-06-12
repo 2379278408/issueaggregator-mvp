@@ -12,3 +12,20 @@
   - 项目使用三层记忆结构：L0 原子记忆、L1 主题摘要、L2 全局画像。
   - 记忆落盘采用追加式事件流；新增通过 append 写入，删减通过 prune/tombstone 写入。
   - 已写入事件禁止原地修改；任何调整都通过新增事件表达。
+
+[前端交付偏好]
+- Date: 2026-06-11
+- Context: 用户要求继续优化前端界面并以当前源码仓库作为测试基线
+- Instructions:
+  - 前端页面文案优先全量汉化。
+  - 视觉优化需要重点提升卡片、阴影、层级、留白和整体质感。
+  - 提交前优先基于当前项目源码仓库执行测试与验证。
+
+[管理接口安全配置]
+- Date: 2026-06-11
+- Context: Agent 在执行前后端优化与后端安全收敛时发现
+- Category: 环境配置
+- Instructions:
+  - 后端管理接口通过 `ADMIN_API_NAMESPACE` 收口到 `/api/admin/<namespace>`。
+  - 前端通过 `VITE_ADMIN_API_NAMESPACE` 访问管理接口，该值需要与后端保持一致。
+  - 生产环境默认关闭 FastAPI 文档页，只有设置 `ENABLE_API_DOCS=true` 时才暴露 `/docs`。

@@ -1,15 +1,24 @@
 <template>
   <div class="page-shell">
     <header class="page-shell__header">
-      <div>
-        <p class="eyebrow">Issue Aggregator</p>
-        <h1>{{ title }}</h1>
-        <p class="page-shell__description">{{ description }}</p>
+      <div class="hero-block">
+        <a class="brand-mark" href="https://monkeycode-ai.com/" target="_blank" rel="noreferrer" aria-label="MonkeyCode 官网">
+          <img src="https://monkeycode-ai.com/logo-light.png" alt="" />
+          <span>MonkeyCode</span>
+        </a>
+        <div class="page-shell__title">
+          <span>{{ title }}</span>
+          <p>{{ description }}</p>
+        </div>
       </div>
-      <nav class="top-nav">
-        <RouterLink to="/">用户页</RouterLink>
-        <RouterLink to="/admin">后台页</RouterLink>
-      </nav>
+      <div class="shell-actions">
+        <nav class="top-nav" aria-label="主导航">
+          <RouterLink to="/">
+            <span class="top-nav__eyebrow">Front Desk</span>
+            <strong>用户提交页</strong>
+          </RouterLink>
+        </nav>
+      </div>
     </header>
     <main class="page-shell__main">
       <slot />

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .database import initialize_database
 from .responses import error_response
-from .routers.feedback import router as feedback_router
+from .routers.feedback import admin_router, public_router
 from .routers.health import router as health_router
 
 
@@ -20,9 +20,28 @@ async def lifespan(_: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    lifespan=lifespan,
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
+)
 app.include_router(health_router)
-app.include_router(feedback_router)
+app.include_router(public_router)
+app.include_router(admin_router)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.path.startswith(settings.api_base_path):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -34,6 +53,13 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
     )
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
+    message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    error_code = "NOT_FOUND" if exc.status_code == 404 else "REQUEST_ERROR"
+    return JSONResponse(status_code=exc.status_code, content=error_response(error_code, message))
+
+
 @app.get("/")
-def root() -> dict[str, object]:
-    return error_response("NOT_IMPLEMENTED", "API root is reserved. Use /api endpoints.")
+def root() -> JSONResponse:
+    return JSONResponse(status_code=404, content=error_response("NOT_FOUND", "Not found"))

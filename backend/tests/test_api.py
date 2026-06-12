@@ -1,7 +1,9 @@
 import os
 import tempfile
 import unittest
+from dataclasses import replace
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 
@@ -19,6 +21,7 @@ class ApiTestCase(unittest.TestCase):
             integrate_draft_batch,
             list_feedback,
             list_submitted_issues,
+            require_admin_token,
             search_submitted_issues,
             update_draft,
         )
@@ -35,6 +38,7 @@ class ApiTestCase(unittest.TestCase):
         self.integrate_draft_batch = integrate_draft_batch
         self.list_feedback = list_feedback
         self.list_submitted_issues = list_submitted_issues
+        self.require_admin_token = require_admin_token
         self.search_submitted_issues = search_submitted_issues
         self.update_draft = update_draft
         self.submission_repository = SubmissionRepository()
@@ -43,6 +47,31 @@ class ApiTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
         os.environ.pop("DATABASE_URL", None)
+
+    def test_admin_router_requires_token_dependency(self) -> None:
+        self.assertTrue(self.feedback_router_module.admin_router.dependencies)
+
+    def test_admin_token_dependency_rejects_missing_or_invalid_token(self) -> None:
+        original_settings = self.feedback_router_module.settings
+        self.feedback_router_module.settings = replace(original_settings, admin_api_token="secret-token")
+        try:
+            with self.assertRaises(HTTPException) as missing:
+                self.require_admin_token(None)
+            self.assertEqual(missing.exception.status_code, 401)
+
+            with self.assertRaises(HTTPException) as invalid:
+                self.require_admin_token("wrong-token")
+            self.assertEqual(invalid.exception.status_code, 401)
+        finally:
+            self.feedback_router_module.settings = original_settings
+
+    def test_admin_token_dependency_accepts_configured_token(self) -> None:
+        original_settings = self.feedback_router_module.settings
+        self.feedback_router_module.settings = replace(original_settings, admin_api_token="secret-token")
+        try:
+            self.assertIsNone(self.require_admin_token("secret-token"))
+        finally:
+            self.feedback_router_module.settings = original_settings
 
     def test_create_feedback_success(self) -> None:
         payload = self.FeedbackCreatePayload(
@@ -276,7 +305,7 @@ class ApiTestCase(unittest.TestCase):
         original_service = self.feedback_router_module.draft_submission_service
         self.feedback_router_module.draft_submission_service = MissingTokenSubmissionService()
         try:
-            response = self.feedback_router_module.submit_draft("draft_missing")
+            response = self.feedback_router_module.submit_draft("draft_1234567890ab")
         finally:
             self.feedback_router_module.draft_submission_service = original_service
 

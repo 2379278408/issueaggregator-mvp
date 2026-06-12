@@ -1,14 +1,15 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-const { apiGet, apiPost, buildSubmittedIssueSearch } = vi.hoisted(() => ({
+const { apiGet, apiPost, buildPublicApiPath, buildSubmittedIssueSearch } = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPost: vi.fn(),
+  buildPublicApiPath: vi.fn((path: string) => `/portal${path}`),
   buildSubmittedIssueSearch: vi.fn((params: { related_id?: string; type?: string; keyword?: string }) => {
     if (params.related_id) {
-      return `/api/issues/submitted/search?related_id=${params.related_id}`
+      return `/portal/issues/submitted/search?related_id=${params.related_id}`
     }
-    return '/api/issues/submitted'
+    return '/portal/issues/submitted'
   }),
 }))
 
@@ -17,6 +18,7 @@ import UserHomePage from './UserHomePage.vue'
 vi.mock('../services/api', () => ({
   apiGet,
   apiPost,
+  buildPublicApiPath,
   buildSubmittedIssueSearch,
 }))
 
@@ -24,6 +26,7 @@ describe('UserHomePage', () => {
   beforeEach(() => {
     apiGet.mockReset()
     apiPost.mockReset()
+    buildPublicApiPath.mockClear()
     buildSubmittedIssueSearch.mockClear()
   })
 
@@ -56,7 +59,7 @@ describe('UserHomePage', () => {
 
     await flushPromises()
 
-    expect(apiGet).toHaveBeenCalledWith('/api/issues/submitted')
+    expect(apiGet).toHaveBeenCalledWith('/portal/issues/submitted')
     expect(wrapper.text()).toContain('Existing issue')
   })
 
@@ -94,7 +97,7 @@ describe('UserHomePage', () => {
     await wrapper.get('input[placeholder="editor-copy-button"]').trigger('blur')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('检测到相同 related_id 的历史 Issue')
+    expect(wrapper.text()).toContain('发现同主题')
     expect(wrapper.text()).toContain('Duplicate issue')
   })
 
@@ -121,12 +124,12 @@ describe('UserHomePage', () => {
 
     await flushPromises()
     await wrapper.get('input[placeholder="editor-copy-button"]').setValue('editor-copy-button')
-    await wrapper.get('textarea[placeholder="描述现象、场景和影响"]').setValue('feedback body')
+    await wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').setValue('feedback body')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
     expect(apiPost).toHaveBeenCalled()
-    expect(apiPost.mock.calls[0][0]).toBe('/api/feedback')
+    expect(apiPost.mock.calls[0][0]).toBe('/portal/feedback')
     expect(apiPost.mock.calls[0][1]).toMatchObject({
       related_id: 'editor-copy-button',
       raw_content: 'feedback body',

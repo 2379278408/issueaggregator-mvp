@@ -15,6 +15,10 @@ class Settings:
     app_name: str
     app_env: str
     database_url: str
+    api_base_path: str
+    admin_api_namespace: str
+    admin_api_token: str | None
+    enable_api_docs: bool
     github_token: str | None
     github_repo_owner: str | None
     github_repo_name: str | None
@@ -25,10 +29,15 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    enable_api_docs = os.getenv("ENABLE_API_DOCS", "false").strip().lower() in {"1", "true", "yes", "on"}
     return Settings(
         app_name=os.getenv("APP_NAME", "Issue Aggregator API"),
         app_env=os.getenv("APP_ENV", "development"),
         database_url=os.getenv("DATABASE_URL", _default_database_url()),
+        api_base_path=os.getenv("API_BASE_PATH", "/api").rstrip("/"),
+        admin_api_namespace=os.getenv("ADMIN_API_NAMESPACE", "workbench").strip() or "workbench",
+        admin_api_token=os.getenv("ADMIN_API_TOKEN"),
+        enable_api_docs=enable_api_docs,
         github_token=os.getenv("GITHUB_TOKEN"),
         github_repo_owner=os.getenv("GITHUB_REPO_OWNER"),
         github_repo_name=os.getenv("GITHUB_REPO_NAME"),

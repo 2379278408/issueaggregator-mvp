@@ -1,15 +1,22 @@
 :root {
-  --color-bg: #f4f6f8;
-  --color-surface: #ffffff;
-  --color-surface-soft: #eef3f7;
-  --color-border: #d9e1e8;
-  --color-text: #18222d;
-  --color-text-muted: #5f7283;
-  --color-accent: #1f5eff;
-  --color-accent-soft: #e7efff;
+  --color-bg: #fffaf0;
+  --color-bg-strong: #fff3e0;
+  --color-surface: rgba(255, 253, 248, 0.92);
+  --color-surface-soft: rgba(246, 248, 250, 0.9);
+  --color-surface-strong: #ffffff;
+  --color-border: rgba(31, 35, 40, 0.12);
+  --color-border-strong: rgba(31, 35, 40, 0.22);
+  --color-text: #111814;
+  --color-text-muted: #656d76;
+  --color-accent: #27c93f;
+  --color-accent-strong: #111814;
+  --color-accent-soft: rgba(124, 242, 156, 0.16);
   --color-warning: #8b5e00;
-  --shadow-panel: 0 12px 30px rgba(20, 35, 52, 0.06);
-  --radius-panel: 18px;
+  --color-warning-soft: #fff7e6;
+  --shadow-panel: 0 18px 42px rgba(17, 24, 20, 0.08);
+  --shadow-card: 0 10px 22px rgba(17, 24, 20, 0.06);
+  --shadow-button: 0 12px 22px rgba(39, 201, 63, 0.22);
+  --radius-panel: 20px;
   --radius-control: 12px;
   --space-2: 8px;
   --space-3: 12px;
@@ -17,6 +24,7 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
   --max-width: 1240px;
   --font-body: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
 }

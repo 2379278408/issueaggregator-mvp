@@ -51,6 +51,23 @@ class RepositoryModelTestCase(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.FeedbackCreatePayload(type="bug", related_id="Editor Copy Button", raw_content="invalid")
 
+    def test_feedback_payload_rejects_overlong_content(self) -> None:
+        with self.assertRaises(ValidationError):
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="x" * 2001,
+            )
+
+    def test_draft_batch_payload_rejects_duplicate_feedback_ids(self) -> None:
+        from app.models import DraftBatchCreatePayload
+
+        with self.assertRaises(ValidationError):
+            DraftBatchCreatePayload(
+                feedback_item_ids=["fb_1234567890ab", "fb_1234567890ab"],
+                confirm_mixed_related_ids=False,
+            )
+
     def test_feedback_status_transition_updates_rows(self) -> None:
         repository = self.FeedbackRepository()
         first = repository.create_feedback(
