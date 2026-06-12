@@ -264,8 +264,10 @@ class DraftBatchService:
 
 class DraftIntegrationService:
     def __init__(self) -> None:
+        self.settings = get_settings()
         self.batch_repository = DraftBatchRepository()
         self.draft_repository = DraftRepository()
+        self.ai_client = OpenAICompatibleClient()
 
     def integrate_batch(self, batch_id: str) -> DraftRecord:
         batch = self.batch_repository.get_batch(batch_id)
@@ -284,13 +286,13 @@ class DraftIntegrationService:
         self.batch_repository.update_batch_status(batch_id, status=DraftBatchStatus.INTEGRATING)
         try:
             draft = self._build_draft(batch_id, feedback_items)
-        except RepositoryError as exc:
+        except (RepositoryError, AIIntegrationError) as exc:
             self.batch_repository.update_batch_status(
                 batch_id,
                 status=DraftBatchStatus.FAILED,
                 integration_error=str(exc),
             )
-            raise
+            raise RepositoryError(str(exc)) from exc
 
         self.batch_repository.update_batch_status(batch_id, status=DraftBatchStatus.DRAFT_READY)
         return draft
@@ -299,18 +301,28 @@ class DraftIntegrationService:
         related_ids = sorted({item.related_id for item in feedback_items})
         primary_related_id = related_ids[0] if len(related_ids) == 1 else "mixed-related-ids"
         issue_type = feedback_items[0].type.capitalize()
-        title = f"[{issue_type}] {primary_related_id}"
         related_id_summary = ", ".join(related_ids)
         prompt_snapshot = self._build_prompt_snapshot(feedback_items)
-        body_markdown = self._build_markdown(primary_related_id, feedback_items)
+        if self._should_use_ai():
+            generated = self.ai_client.create_issue_draft(prompt_snapshot=prompt_snapshot, feedback_items=feedback_items)
+            title = generated["title"]
+            body_markdown = generated["body_markdown"]
+            ai_model = self.settings.ai_model
+        else:
+            title = f"[{issue_type}] {primary_related_id}"
+            body_markdown = self._build_markdown(primary_related_id, feedback_items)
+            ai_model = "deterministic-template-v1"
         return self.draft_repository.create_draft(
             batch_id=batch_id,
             title=title,
             body_markdown=body_markdown,
             related_id_summary=related_id_summary,
-            ai_model="deterministic-template-v1",
+            ai_model=ai_model,
             prompt_snapshot=prompt_snapshot,
         )
+
+    def _should_use_ai(self) -> bool:
+        return bool(self.settings.ai_api_key and self.settings.ai_api_base_url and self.settings.ai_model)
 
     def _build_prompt_snapshot(self, feedback_items: list[FeedbackRecord]) -> str:
         lines = []
@@ -361,6 +373,110 @@ class DraftIntegrationService:
                 "Missing Information\n" + "\n".join(missing_lines),
             ]
         )
+
+
+class AIIntegrationError(ValueError):
+    pass
+
+
+class OpenAICompatibleClient:
+    def __init__(self) -> None:
+        self.settings = get_settings()
+
+    def create_issue_draft(self, *, prompt_snapshot: str, feedback_items: list[FeedbackRecord]) -> dict[str, str]:
+        if not self.settings.ai_api_key:
+            raise AIIntegrationError("AI_API_KEY is required")
+        if not self.settings.ai_api_base_url or not self.settings.ai_model:
+            raise AIIntegrationError("AI_API_BASE_URL and AI_MODEL are required")
+
+        endpoint = self._build_chat_completions_endpoint(self.settings.ai_api_base_url)
+        payload = json.dumps(
+            {
+                "model": self.settings.ai_model,
+                "temperature": 0.2,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You convert grouped user feedback into one concise GitHub issue. "
+                            "Return strict JSON with title and body_markdown fields only."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": self._build_user_prompt(prompt_snapshot=prompt_snapshot, feedback_items=feedback_items),
+                    },
+                ],
+            }
+        ).encode("utf-8")
+        http_request = request.Request(
+            endpoint,
+            data=payload,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.settings.ai_api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "issue-aggregator-mvp",
+            },
+        )
+
+        try:
+            with request.urlopen(http_request, timeout=30) as response:
+                response_body = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8") if exc.fp else str(exc)
+            raise AIIntegrationError(detail or f"AI API request failed with status {exc.code}") from exc
+        except error.URLError as exc:
+            raise AIIntegrationError(str(exc.reason)) from exc
+        except json.JSONDecodeError as exc:
+            raise AIIntegrationError("AI API returned invalid JSON") from exc
+
+        content = self._extract_message_content(response_body)
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise AIIntegrationError("AI response content is not valid JSON") from exc
+
+        title = str(parsed.get("title", "")).strip()
+        body_markdown = str(parsed.get("body_markdown", "")).strip()
+        if not title or not body_markdown:
+            raise AIIntegrationError("AI response must include title and body_markdown")
+        return {"title": title[:200], "body_markdown": body_markdown}
+
+    def _build_chat_completions_endpoint(self, base_url: str) -> str:
+        normalized = base_url.rstrip("/")
+        if normalized.endswith("/chat/completions"):
+            return normalized
+        return f"{normalized}/chat/completions"
+
+    def _build_user_prompt(self, *, prompt_snapshot: str, feedback_items: list[FeedbackRecord]) -> str:
+        return "\n\n".join(
+            [
+                "Create a single GitHub issue draft from these grouped feedback items.",
+                "Requirements:",
+                "- Keep the title specific and under 100 characters.",
+                "- Include Summary, Background, Steps to Reproduce, Expected Behavior, Actual Behavior, Impact, and Missing Information sections.",
+                "- Preserve concrete user details from the feedback.",
+                f"User signals count: {len(feedback_items)}",
+                "Feedback items:",
+                prompt_snapshot,
+            ]
+        )
+
+    def _extract_message_content(self, response_body: dict[str, object]) -> str:
+        choices = response_body.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise AIIntegrationError("AI API response has no choices")
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise AIIntegrationError("AI API response choice is invalid")
+        message = first_choice.get("message")
+        if not isinstance(message, dict):
+            raise AIIntegrationError("AI API response message is invalid")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise AIIntegrationError("AI API response content is empty")
+        return content.strip()
 
 
 class DraftRepository:

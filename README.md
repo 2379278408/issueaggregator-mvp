@@ -55,6 +55,7 @@ GITHUB_REPO_OWNER=<repo-owner>
 GITHUB_REPO_NAME=<repo-name>
 AI_API_KEY=<optional>
 AI_API_BASE_URL=<optional>
+AI_MODEL=<optional>
 DATABASE_URL=sqlite:////workspace/backend/data/issue_aggregator.db
 API_BASE_PATH=/api
 ADMIN_API_NAMESPACE=workbench
@@ -71,6 +72,15 @@ RELATED_ID_RATE_LIMIT_WINDOW=24
 - 管理接口要求请求头 `X-Admin-Token` 与 `ADMIN_API_TOKEN` 匹配
 - 生产部署仍建议通过网关或反向代理限制 `/api/admin/*` 的访问入口
 - 生产环境默认关闭 FastAPI 文档页，只有在 `ENABLE_API_DOCS=true` 时才暴露 `/docs`
+- 配置 `AI_API_KEY`、`AI_API_BASE_URL` 和 `AI_MODEL` 后，草稿生成会调用 OpenAI-compatible Chat Completions 接口
+- 未完整配置 AI 参数时，草稿生成使用内置确定性模板
+
+MiMo Token Plan 示例：
+
+```bash
+AI_API_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+AI_MODEL=mimo-v2.5-pro
+```
 
 ### Frontend commands
 

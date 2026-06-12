@@ -42,6 +42,12 @@ class RepositoryModelTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
         os.environ.pop("DATABASE_URL", None)
+        os.environ.pop("AI_API_KEY", None)
+        os.environ.pop("AI_API_BASE_URL", None)
+        os.environ.pop("AI_MODEL", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+        os.environ.pop("GITHUB_REPO_OWNER", None)
+        os.environ.pop("GITHUB_REPO_NAME", None)
 
     def test_related_id_accepts_slug_format(self) -> None:
         payload = self.FeedbackCreatePayload(type="bug", related_id="editor-copy-button", raw_content="valid content")
@@ -222,6 +228,63 @@ class RepositoryModelTestCase(unittest.TestCase):
 
         self.assertEqual(submission.github_issue_number, 301)
         self.assertEqual(submitted_items["total"], 1)
+
+    def test_integrate_batch_uses_ai_when_configured(self) -> None:
+        os.environ["AI_API_KEY"] = "test-ai-token"
+        os.environ["AI_API_BASE_URL"] = "https://example.test/v1"
+        os.environ["AI_MODEL"] = "test-model"
+
+        feedback_repository = self.FeedbackRepository()
+        batch_service = self.DraftBatchService()
+        integration_service = self.DraftIntegrationService()
+
+        class FakeAIClient:
+            def create_issue_draft(self, *, prompt_snapshot: str, feedback_items: list[object]) -> dict[str, str]:
+                return {
+                    "title": "AI generated issue",
+                    "body_markdown": f"AI body from {len(feedback_items)} feedback item",
+                }
+
+        integration_service.ai_client = FakeAIClient()
+        first = feedback_repository.create_feedback(
+            self.FeedbackCreatePayload(type="bug", related_id="editor-copy-button", raw_content="copy button is invisible")
+        )
+        batch = batch_service.create_batch([first.id], confirm_mixed_related_ids=False)
+
+        draft = integration_service.integrate_batch(batch.id)
+
+        self.assertEqual(draft.title, "AI generated issue")
+        self.assertEqual(draft.body_markdown, "AI body from 1 feedback item")
+        self.assertEqual(draft.ai_model, "test-model")
+
+    def test_integrate_batch_marks_failed_when_ai_fails(self) -> None:
+        os.environ["AI_API_KEY"] = "test-ai-token"
+        os.environ["AI_API_BASE_URL"] = "https://example.test/v1"
+        os.environ["AI_MODEL"] = "test-model"
+
+        from app.repositories import AIIntegrationError
+
+        feedback_repository = self.FeedbackRepository()
+        batch_repository = self.DraftBatchRepository()
+        batch_service = self.DraftBatchService()
+        integration_service = self.DraftIntegrationService()
+
+        class FailingAIClient:
+            def create_issue_draft(self, *, prompt_snapshot: str, feedback_items: list[object]) -> dict[str, str]:
+                raise AIIntegrationError("AI unavailable")
+
+        integration_service.ai_client = FailingAIClient()
+        first = feedback_repository.create_feedback(
+            self.FeedbackCreatePayload(type="bug", related_id="editor-copy-button", raw_content="copy button is invisible")
+        )
+        batch = batch_service.create_batch([first.id], confirm_mixed_related_ids=False)
+
+        with self.assertRaises(self.RepositoryError):
+            integration_service.integrate_batch(batch.id)
+
+        stored_batch = batch_repository.get_batch(batch.id)
+        self.assertEqual(stored_batch.status.value, "failed")
+        self.assertEqual(stored_batch.integration_error, "AI unavailable")
 
     def test_submit_draft_enforces_related_id_rate_limit(self) -> None:
         os.environ["GITHUB_TOKEN"] = "test-token"

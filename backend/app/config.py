@@ -24,6 +24,7 @@ class Settings:
     github_repo_name: str | None
     ai_api_key: str | None
     ai_api_base_url: str | None
+    ai_model: str | None
     rate_limit_per_hour: int
     related_id_rate_limit_window: int
 
@@ -43,6 +44,7 @@ def get_settings() -> Settings:
         github_repo_name=os.getenv("GITHUB_REPO_NAME"),
         ai_api_key=os.getenv("AI_API_KEY"),
         ai_api_base_url=os.getenv("AI_API_BASE_URL"),
+        ai_model=os.getenv("AI_MODEL"),
         rate_limit_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "20")),
         related_id_rate_limit_window=int(os.getenv("RELATED_ID_RATE_LIMIT_WINDOW", "24")),
     )
