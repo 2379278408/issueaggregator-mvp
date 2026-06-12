@@ -79,7 +79,7 @@ MiMo Token Plan 示例：
 
 ```bash
 AI_API_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-AI_MODEL=mimo-v2.5-pro
+AI_MODEL=mimo-v2.5
 ```
 
 ### Frontend commands

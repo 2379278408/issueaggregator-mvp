@@ -5,6 +5,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _load_env_file() -> None:
+    if os.getenv("APP_ENV") == "test":
+        return
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 def _default_database_url() -> str:
     data_dir = Path(__file__).resolve().parents[1] / "data"
     return f"sqlite:///{data_dir / 'issue_aggregator.db'}"
@@ -30,6 +44,7 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    _load_env_file()
     enable_api_docs = os.getenv("ENABLE_API_DOCS", "false").strip().lower() in {"1", "true", "yes", "on"}
     return Settings(
         app_name=os.getenv("APP_NAME", "Issue Aggregator API"),

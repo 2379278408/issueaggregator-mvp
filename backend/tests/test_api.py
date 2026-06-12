@@ -6,10 +6,13 @@ from dataclasses import replace
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+os.environ["APP_ENV"] = "test"
+
 
 class ApiTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        os.environ["APP_ENV"] = "test"
         os.environ["DATABASE_URL"] = f"sqlite:///{self.temp_dir.name}/test.db"
 
         from app.database import initialize_database
@@ -46,6 +49,7 @@ class ApiTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+        os.environ.pop("APP_ENV", None)
         os.environ.pop("DATABASE_URL", None)
 
     def test_admin_router_requires_token_dependency(self) -> None:

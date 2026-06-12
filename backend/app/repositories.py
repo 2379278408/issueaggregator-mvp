@@ -394,12 +394,15 @@ class OpenAICompatibleClient:
             {
                 "model": self.settings.ai_model,
                 "temperature": 0.2,
+                "max_completion_tokens": 2400,
+                "stream": False,
                 "messages": [
                     {
                         "role": "system",
                         "content": (
                             "You convert grouped user feedback into one concise GitHub issue. "
-                            "Return strict JSON with title and body_markdown fields only."
+                            "Return compact strict JSON with title and body_markdown fields only. "
+                            "Do not wrap the JSON in markdown fences."
                         ),
                     },
                     {
@@ -421,8 +424,10 @@ class OpenAICompatibleClient:
         )
 
         try:
-            with request.urlopen(http_request, timeout=30) as response:
+            with request.urlopen(http_request, timeout=60) as response:
                 response_body = json.loads(response.read().decode("utf-8"))
+        except TimeoutError as exc:
+            raise AIIntegrationError("AI API request timed out") from exc
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8") if exc.fp else str(exc)
             raise AIIntegrationError(detail or f"AI API request failed with status {exc.code}") from exc
@@ -432,10 +437,7 @@ class OpenAICompatibleClient:
             raise AIIntegrationError("AI API returned invalid JSON") from exc
 
         content = self._extract_message_content(response_body)
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise AIIntegrationError("AI response content is not valid JSON") from exc
+        parsed = self._parse_json_content(content)
 
         title = str(parsed.get("title", "")).strip()
         body_markdown = str(parsed.get("body_markdown", "")).strip()
@@ -477,6 +479,23 @@ class OpenAICompatibleClient:
         if not isinstance(content, str) or not content.strip():
             raise AIIntegrationError("AI API response content is empty")
         return content.strip()
+
+    def _parse_json_content(self, content: str) -> dict[str, object]:
+        normalized = content.strip()
+        if normalized.startswith("```"):
+            lines = normalized.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            normalized = "\n".join(lines).strip()
+        try:
+            parsed = json.loads(normalized)
+        except json.JSONDecodeError as exc:
+            raise AIIntegrationError("AI response content is not valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise AIIntegrationError("AI response JSON must be an object")
+        return parsed
 
 
 class DraftRepository:

@@ -4,10 +4,13 @@ import unittest
 
 from pydantic import ValidationError
 
+os.environ["APP_ENV"] = "test"
+
 
 class RepositoryModelTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        os.environ["APP_ENV"] = "test"
         os.environ["DATABASE_URL"] = f"sqlite:///{self.temp_dir.name}/test.db"
 
         from app.database import initialize_database
@@ -41,6 +44,7 @@ class RepositoryModelTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+        os.environ.pop("APP_ENV", None)
         os.environ.pop("DATABASE_URL", None)
         os.environ.pop("AI_API_KEY", None)
         os.environ.pop("AI_API_BASE_URL", None)
