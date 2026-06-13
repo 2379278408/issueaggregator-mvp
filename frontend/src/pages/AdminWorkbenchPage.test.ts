@@ -7,13 +7,24 @@ const { apiGet, apiPost, apiPut } = vi.hoisted(() => ({
   apiPut: vi.fn(),
 }))
 
+const { routeQuery, routerReplace } = vi.hoisted(() => ({
+  routeQuery: {} as Record<string, string>,
+  routerReplace: vi.fn(),
+}))
+
 import AdminWorkbenchPage from './AdminWorkbenchPage.vue'
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: routeQuery }),
+  useRouter: () => ({ replace: routerReplace }),
+}))
 
 vi.mock('../services/api', () => ({
   apiGet,
   apiPost,
   apiPut,
   buildAdminApiPath: (path: string) => `/api/admin/workbench${path}`,
+  clearAdminToken: () => window.sessionStorage.removeItem('issueAggregatorAdminToken'),
   hasAdminToken: () => Boolean(window.sessionStorage.getItem('issueAggregatorAdminToken')),
   setAdminToken: (token: string) => window.sessionStorage.setItem('issueAggregatorAdminToken', token),
 }))
@@ -44,6 +55,9 @@ describe('AdminWorkbenchPage', () => {
     apiGet.mockReset()
     apiPost.mockReset()
     apiPut.mockReset()
+    routerReplace.mockReset()
+    Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
+    apiGet.mockResolvedValue({ success: true, data: { items: [], page: 1, page_size: 20, total: 0 } })
   })
 
   it('keeps admin data locked until a token is provided', async () => {
@@ -67,6 +81,21 @@ describe('AdminWorkbenchPage', () => {
     expect(apiGet).toHaveBeenCalled()
   })
 
+  it('returns to the token form when the entered token cannot load admin data', async () => {
+    apiGet.mockResolvedValue({ success: false, message: 'invalid token', http_status: 401 })
+
+    const wrapper = mountPage({ unlocked: false })
+    await flushPromises()
+
+    await wrapper.get('input[type="password"]').setValue('wrong-token')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('管理 token 无效，请重新输入。')
+    expect(wrapper.text()).toContain('输入管理凭据')
+    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBeNull()
+  })
+
   it('loads feedback counts on mount', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
@@ -80,6 +109,264 @@ describe('AdminWorkbenchPage', () => {
     expect(wrapper.text()).toContain('草稿中')
     expect(wrapper.text()).toContain('已发布')
     expect(wrapper.text()).toContain('one')
+  })
+
+  it('renders recent audit events in the admin workspace', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'audit_1',
+              event_type: 'admin_action_succeeded',
+              client_ip: '8.8.8.8',
+              path: '/api/admin/workbench/draft-batches',
+              action: 'create_draft_batch',
+              resource_id: 'batch_1',
+              created_at: '2026-06-13T14:00:00Z',
+            },
+          ],
+          total: 1,
+        },
+      })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('最近审计事件')
+    expect(wrapper.text()).toContain('管理员操作成功 · create_draft_batch')
+    expect(wrapper.text()).toContain('batch_1')
+  })
+
+  it('filters audit events by event type', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'audit_2',
+              event_type: 'admin_auth_failed',
+              client_ip: '8.8.8.8',
+              path: '/api/admin/workbench/feedback',
+              action: null,
+              resource_id: null,
+              created_at: '2026-06-13T14:00:00Z',
+            },
+          ],
+          total: 1,
+        },
+      })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '鉴权失败')!.trigger('click')
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenLastCalledWith('/api/admin/workbench/audit-events?page_size=8&event_type=admin_auth_failed')
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { auditEventType: 'admin_auth_failed' } })
+    expect(wrapper.text()).toContain('管理员鉴权失败')
+  })
+
+  it('filters audit events by keyword', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'audit_3',
+              event_type: 'admin_action_succeeded',
+              client_ip: '8.8.4.4',
+              path: '/api/admin/workbench/draft-batches',
+              action: 'create_draft_batch',
+              resource_id: 'batch_123',
+              created_at: '2026-06-13T14:00:00Z',
+            },
+          ],
+          total: 1,
+        },
+      })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('input[placeholder="按 IP、路径、动作或资源检索"]').setValue('batch_123')
+    await findButtonByText(wrapper, '检索')!.trigger('click')
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenLastCalledWith('/api/admin/workbench/audit-events?page_size=8&keyword=batch_123')
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { auditKeyword: 'batch_123' } })
+    expect(wrapper.text()).toContain('batch_123')
+  })
+
+  it('filters audit events by time range', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '1 小时')!.trigger('click')
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenLastCalledWith('/api/admin/workbench/audit-events?page_size=8&time_range=1h')
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { auditTimeRange: '1h' } })
+  })
+
+  it('restores audit filters from route query on mount', async () => {
+    routeQuery.auditEventType = 'admin_action_succeeded'
+    routeQuery.auditTimeRange = '24h'
+    routeQuery.auditKeyword = 'batch_9'
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenLastCalledWith('/api/admin/workbench/audit-events?page_size=8&event_type=admin_action_succeeded&time_range=24h&keyword=batch_9')
+    expect((wrapper.get('input[placeholder="按 IP、路径、动作或资源检索"]').element as HTMLInputElement).value).toBe('batch_9')
+  })
+
+  it('restores grouped draft context from route query on mount', async () => {
+    routeQuery.adminQueue = 'grouped'
+    routeQuery.batchId = 'batch_1'
+    routeQuery.draftId = 'draft_1'
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_1',
+              draft_id: 'draft_1',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'draft_1',
+          batch_id: 'batch_1',
+          title: '[问题] editor-copy-button',
+          body_markdown: 'Summary',
+          related_id_summary: 'editor-copy-button',
+          status: 'draft_ready',
+          updated_at: '2026-06-11T11:10:00Z',
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenCalledWith('/api/admin/workbench/drafts/draft_1')
+    expect(wrapper.text()).toContain('草稿中')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('Summary')
+    expect(routerReplace).toHaveBeenLastCalledWith({
+      query: { adminQueue: 'grouped', batchId: 'batch_1', draftId: 'draft_1' },
+    })
+  })
+
+  it('drops invalid batch and draft query context after loading', async () => {
+    routeQuery.adminQueue = 'grouped'
+    routeQuery.batchId = 'batch_missing'
+    routeQuery.draftId = 'draft_missing'
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    mountPage()
+    await flushPromises()
+
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { adminQueue: 'grouped' } })
+  })
+
+  it('returns to the token form when stored admin token is rejected', async () => {
+    apiGet.mockResolvedValue({ success: false, message: 'invalid token', http_status: 401 })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('管理 token 无效，请重新输入。')
+    expect(wrapper.text()).toContain('输入管理凭据')
+    expect(wrapper.text()).not.toContain('正在加载')
+  })
+
+  it('keeps the admin session when initial data loading fails temporarily', async () => {
+    apiGet.mockResolvedValue({ success: false, message: 'network down', http_status: 502 })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBe('secret-token')
+    expect(wrapper.text()).toContain('管理数据加载失败，请检查后端服务或管理 token。')
+    expect(wrapper.text()).toContain('整理反馈，生成 Issue')
+  })
+
+  it('clears stale queue data when a later admin refresh fails', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: false, message: 'network down' })
+      .mockResolvedValueOnce({ success: false, message: 'network down' })
+      .mockResolvedValueOnce({ success: false, message: 'network down' })
+    apiPost.mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 'batch_1',
+        status: 'created',
+        primary_related_id: 'editor-copy-button',
+        related_id_count: 1,
+        created_at: '2026-06-11T11:00:00Z',
+      },
+    })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('one')
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await findButtonByText(wrapper, '创建批次')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('管理数据加载失败')
+    expect(wrapper.text()).not.toContain('one')
+    expect(wrapper.text()).toContain('暂无内容。')
+    expect(wrapper.text()).toContain('batch_1')
+    expect(findButtonByText(wrapper, '生成草稿')!.attributes('disabled')).toBeUndefined()
   })
 
   it('shows review decision guidance for mixed related ids and missing fields', async () => {
@@ -111,6 +398,7 @@ describe('AdminWorkbenchPage', () => {
   it('creates batch and integrates draft', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
@@ -168,9 +456,113 @@ describe('AdminWorkbenchPage', () => {
     expect(wrapper.text()).toContain('待提交')
   }, 10000)
 
+  it('recovers when batch creation rejects', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+    apiPost.mockRejectedValue(new Error('network down'))
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await findButtonByText(wrapper, '创建批次')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('批次创建失败，请检查网络后重试')
+    expect(findButtonByText(wrapper, '创建批次')!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('selects all pending feedback with one action', async () => {
+    apiGet
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' },
+            { id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'pending', created_at: 'now' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '一键勾选')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已选 2 / 2')
+    expect(wrapper.findAll('input[type="checkbox"]').every((checkbox) => (checkbox.element as HTMLInputElement).checked)).toBe(true)
+  })
+
+  it('resumes a failed grouped batch and regenerates a draft', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_failed',
+              batch_status: 'failed',
+              batch_integration_error: 'AI API request timed out',
+              draft_id: null,
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'draft_1',
+          batch_id: 'batch_failed',
+          title: '[Bug] editor-copy-button',
+          body_markdown: 'Summary',
+          related_id_summary: 'editor-copy-button',
+          status: 'draft_ready',
+          updated_at: '2026-06-11T11:10:00Z',
+        },
+      })
+    apiPost.mockResolvedValueOnce({
+      success: true,
+      data: {
+        batch_id: 'batch_failed',
+        draft_id: 'draft_1',
+        status: 'draft_ready',
+      },
+    })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '草稿中')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().includes('editor-copy-button'))!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('上次生成失败')
+    await findButtonByText(wrapper, '生成草稿')!.trigger('click')
+    await flushPromises()
+
+    expect(apiPost).toHaveBeenCalledWith('/api/admin/workbench/draft-batches/batch_failed/integrate', {})
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('Summary')
+  })
+
   it('submits loaded draft and shows submission result', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
@@ -255,6 +647,7 @@ describe('AdminWorkbenchPage', () => {
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'toolbar-shortcuts', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'toolbar-shortcuts', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({
@@ -307,5 +700,21 @@ describe('AdminWorkbenchPage', () => {
     expect(findButtonByText(wrapper, '生成草稿')!.attributes('disabled')).toBeDefined()
     expect(findButtonByText(wrapper, '提交 GitHub')!.attributes('disabled')).toBeDefined()
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('用户信号数量')
+  })
+
+  it('syncs queue context to route when switching status', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'toolbar-shortcuts', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '草稿中')!.trigger('click')
+    await flushPromises()
+
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { adminQueue: 'grouped' } })
   })
 })

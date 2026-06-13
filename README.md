@@ -41,10 +41,13 @@ node scripts/memory-cli.js prune L0 bootstrap-l0-001 "该记忆已过时"
 
 ```bash
 # Run backend from /workspace/backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 3001
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Run backend tests from /workspace/backend
 python3 -m unittest discover -s tests
+
+# Run public feedback guardrail E2E check from /workspace/backend
+python3 tests/e2e_public_feedback_guardrails.py
 ```
 
 ### Backend environment variables
@@ -63,6 +66,10 @@ ADMIN_API_TOKEN=<admin-token>
 ENABLE_API_DOCS=false
 RATE_LIMIT_PER_HOUR=20
 RELATED_ID_RATE_LIMIT_WINDOW=24
+PUBLIC_FEEDBACK_DAILY_IP_LIMIT=5
+TRUST_PROXY_HEADERS=false
+PUBLIC_FEEDBACK_ALLOWED_ORIGINS=
+PUBLIC_FEEDBACK_DUPLICATE_WINDOW_MINUTES=10
 ```
 
 说明：
@@ -72,6 +79,14 @@ RELATED_ID_RATE_LIMIT_WINDOW=24
 - 管理接口要求请求头 `X-Admin-Token` 与 `ADMIN_API_TOKEN` 匹配
 - 生产部署仍建议通过网关或反向代理限制 `/api/admin/*` 的访问入口
 - 生产环境默认关闭 FastAPI 文档页，只有在 `ENABLE_API_DOCS=true` 时才暴露 `/docs`
+- 未显式配置 `DATABASE_URL` 时，默认库文件会按 `APP_ENV` 分流：开发态写入 `backend/data/issue_aggregator.dev.db`，演示态写入 `backend/data/issue_aggregator.<env>.db`，生产态写入 `backend/data/issue_aggregator.db`
+- 同一 IP 每天最多提交 `PUBLIC_FEEDBACK_DAILY_IP_LIMIT` 次公开反馈
+- 默认情况下，服务会直接使用公网来源 IP；当直连来源是私网、回环或链路本地代理地址且请求带有有效 `X-Forwarded-For` 时，会自动改用该 header 的首个 IP 做限流识别
+- `TRUST_PROXY_HEADERS=true` 时会无条件优先使用 `X-Forwarded-For`，仅适用于可信反向代理已覆盖该 header 的部署
+- 浏览器请求公开反馈接口时，如果带有 `Origin`，默认要求与当前服务同源；配置 `PUBLIC_FEEDBACK_ALLOWED_ORIGINS` 后，会按逗号分隔白名单精确放行
+- 公开反馈会在 `PUBLIC_FEEDBACK_DUPLICATE_WINDOW_MINUTES` 窗口内拦截同类型、同关联标识、同正文/期望/实际的重复提交
+- 管理接口成功/失败审计事件会写入数据库 `audit_events`，日志中的 `recent_count` 基于最近 10 分钟同类型事件统计
+- 管理后台会通过 `GET /api/admin/workbench/audit-events` 展示最近审计事件，便于回看管理员鉴权失败和成功操作
 - 配置 `AI_API_KEY`、`AI_API_BASE_URL` 和 `AI_MODEL` 后，草稿生成会调用 OpenAI-compatible Chat Completions 接口
 - 未完整配置 AI 参数时，草稿生成使用内置确定性模板
 
@@ -99,17 +114,17 @@ npm test
 
 ```bash
 VITE_API_BASE_PATH=/api
+VITE_API_PROXY_TARGET=http://localhost:8000
 VITE_ADMIN_API_NAMESPACE=workbench
-VITE_ADMIN_API_TOKEN=<optional-admin-token-for-trusted-preview>
 ```
 
 说明：
 
 - `VITE_API_BASE_PATH` 需要与后端 `API_BASE_PATH` 保持一致
+- 本地开发时，Vite 代理会按 `VITE_API_BASE_PATH` 转发到 `VITE_API_PROXY_TARGET`，默认值为 `http://localhost:8000`
 - `VITE_ADMIN_API_NAMESPACE` 需要与后端 `ADMIN_API_NAMESPACE` 保持一致
-- 本地开发时，Vite 代理会按 `VITE_API_BASE_PATH` 转发到 `http://localhost:3001`
-- 管理请求会自动读取 `VITE_ADMIN_API_TOKEN` 或 `sessionStorage.issueAggregatorAdminToken` 并发送 `X-Admin-Token`
-- `VITE_ADMIN_API_TOKEN` 会进入前端构建产物，只适合受控预览环境
+- 管理请求只会读取 `sessionStorage.issueAggregatorAdminToken` 并发送 `X-Admin-Token`
+- 管理 token 不应写入任何 `VITE_*` 前端环境变量，因为这类变量会进入前端构建产物
 
 ### Admin workbench flow
 
@@ -155,14 +170,23 @@ npm run build
 - `frontend/dist/assets/*.css`
 - `frontend/dist/assets/*.js`
 
-当前交付包为 `frontend/issue-aggregator-frontend-dist-cohesive-ui.zip`。将 `frontend/dist/` 压缩为 zip 后，可直接上传到静态托管目录；运行期需要将 `VITE_API_BASE_PATH` 对应的路径前缀反向代理到后端服务。
+当前交付包为 `frontend/issue-aggregator-frontend-dist-reviewed-fixes-v2.zip`。将 `frontend/dist/` 压缩为 zip 后，可直接上传到静态托管目录；运行期需要将 `VITE_API_BASE_PATH` 对应的路径前缀反向代理到后端服务。
+
+### Troubleshooting
+
+- 管理页回到 token 输入框：先检查 `ADMIN_API_TOKEN` 与 `sessionStorage.issueAggregatorAdminToken` 是否一致，再确认请求路径是否仍为 `/api/admin/workbench/*`
+- 本地前端看不到数据：先确认后端已在 `8000` 端口启动，再检查 `VITE_API_PROXY_TARGET` 是否仍为 `http://localhost:8000`
+- 公开反馈提交返回 `403`：先核对浏览器 `Origin` 是否与当前服务同源；跨域预览时把源站加入 `PUBLIC_FEEDBACK_ALLOWED_ORIGINS`
+- 公开反馈被快速拦截：检查是否命中 `PUBLIC_FEEDBACK_DAILY_IP_LIMIT`，或是否落在 `PUBLIC_FEEDBACK_DUPLICATE_WINDOW_MINUTES` 窗口内的重复内容规则
+- 审计面板为空：先确认管理接口请求成功，再检查数据库 `audit_events` 是否已有 `admin_auth_failed` 或 `admin_action_succeeded` 事件
+- 开发时 SQLite 文件持续变脏：优先使用默认开发态库 `backend/data/issue_aggregator.dev.db`，或显式设置独立的 `DATABASE_URL`
 
 ### Current implementation status
 
 - Backend health check endpoint is available at `/api/health`
 - SQLite schema initialization runs on startup
 - Frontend routes `/` and `/admin` are fully wired to the MVP workflow
-- Vite proxy forwards the configured `VITE_API_BASE_PATH` to `http://localhost:3001`
+- Vite proxy forwards the configured `VITE_API_BASE_PATH` to `VITE_API_PROXY_TARGET`, defaulting to `http://localhost:8000`
 - Admin API endpoints are namespaced under `/api/admin/<ADMIN_API_NAMESPACE>`
 - Admin API endpoints require `X-Admin-Token`
 - Backend adds stronger payload length limits, duplicate ID validation, resource ID format validation, and security headers

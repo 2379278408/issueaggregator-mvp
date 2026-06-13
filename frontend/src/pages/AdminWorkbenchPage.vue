@@ -40,6 +40,8 @@
         </div>
       </header>
 
+      <div v-if="adminDataMessage" class="feedback-message feedback-message--error">{{ adminDataMessage }}</div>
+
       <section class="triage-grid">
         <article id="queue-panel" class="signal-stream">
           <header class="studio-section-head">
@@ -49,6 +51,13 @@
             </div>
             <p>{{ queueDescription }}</p>
           </header>
+
+          <div v-if="queueStatus === 'pending' && queueItems.length" class="signal-actions">
+            <button class="button button--secondary button--compact" type="button" @click="toggleCurrentPendingSelection">
+              {{ allPendingSelected ? '取消全选' : '一键勾选' }}
+            </button>
+            <span>已选 {{ selectedIds.length }} / {{ queueItems.length }}</span>
+          </div>
 
           <div class="signal-list">
             <section v-for="section in queueSections" :key="section.label" class="signal-group">
@@ -197,12 +206,89 @@
           </div>
         </article>
       </section>
+
+      <section class="audit-stream">
+        <header class="studio-section-head">
+          <div>
+            <span>Security Events</span>
+            <h3>最近审计事件</h3>
+          </div>
+          <p>查看最近的管理员鉴权失败和成功操作，便于快速回看安全链路。</p>
+        </header>
+
+        <div class="audit-stream__meta">
+          <span>最近 {{ auditEvents.length }} 条</span>
+          <button class="button button--secondary button--compact" type="button" :disabled="loadingAuditEvents" @click="loadAuditEvents">
+            {{ loadingAuditEvents ? '刷新中...' : '刷新事件' }}
+          </button>
+        </div>
+
+        <div class="audit-filters">
+          <button
+            v-for="option in auditFilterOptions"
+            :key="option.value"
+            class="audit-filter-chip"
+            :class="{ 'is-active': activeAuditFilter === option.value }"
+            type="button"
+            :disabled="loadingAuditEvents"
+            @click="applyAuditFilter(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+
+        <div class="audit-filters audit-filters--time">
+          <button
+            v-for="option in auditTimeRangeOptions"
+            :key="option.value"
+            class="audit-filter-chip"
+            :class="{ 'is-active': activeAuditTimeRange === option.value }"
+            type="button"
+            :disabled="loadingAuditEvents"
+            @click="applyAuditTimeRange(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+
+        <div class="audit-search">
+          <input
+            v-model="auditKeywordInput"
+            class="input"
+            type="text"
+            placeholder="按 IP、路径、动作或资源检索"
+            :disabled="loadingAuditEvents"
+            @keydown.enter.prevent="applyAuditKeyword"
+          />
+          <button class="button button--secondary button--compact" type="button" :disabled="loadingAuditEvents" @click="applyAuditKeyword">
+            检索
+          </button>
+        </div>
+
+        <div v-if="auditMessage" class="feedback-message feedback-message--subtle">{{ auditMessage }}</div>
+        <div class="audit-list">
+          <article v-for="event in auditEvents" :key="event.id" class="audit-card">
+            <div class="audit-card__meta">
+              <strong>{{ getAuditEventLabel(event) }}</strong>
+              <span>{{ describeAuditEventTime(event.created_at) }}</span>
+            </div>
+            <p>{{ describeAuditEvent(event) }}</p>
+            <div class="audit-card__tags">
+              <span>{{ event.client_ip }}</span>
+              <span>{{ event.path }}</span>
+              <span v-if="event.resource_id">{{ event.resource_id }}</span>
+            </div>
+          </article>
+          <div v-if="!auditEvents.length && !loadingAuditEvents" class="empty-state">暂无审计事件。</div>
+        </div>
+      </section>
     </section>
   </AppShell>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from '../components/layout/AppShell.vue'
 import {
@@ -210,8 +296,11 @@ import {
   apiPost,
   apiPut,
   buildAdminApiPath,
+  clearAdminToken,
   hasAdminToken,
   setAdminToken,
+  type AuditEventRecord,
+  type ApiEnvelope,
   type DraftBatchCreatePayload,
   type DraftBatchCreateResponse,
   type DraftIntegrateResponse,
@@ -224,6 +313,13 @@ import {
 
 type QueueStatus = 'pending' | 'grouped' | 'submitted'
 type AdminSection = 'queue' | 'review' | 'draft'
+type AuditEventFilter = 'all' | 'admin_auth_failed' | 'admin_action_succeeded'
+type AuditTimeRange = 'all' | '10m' | '1h' | '24h'
+type AdminRouteContext = {
+  queueStatus: QueueStatus
+  batchId: string
+  draftId: string
+}
 
 const typeLabelMap: Record<string, string> = {
   bug: '缺陷',
@@ -250,20 +346,43 @@ const creatingBatch = ref(false)
 const integratingDraft = ref(false)
 const savingDraft = ref(false)
 const submittingDraft = ref(false)
+const loadingAuditEvents = ref(false)
 const batchMessage = ref('')
 const draftMessage = ref('')
+const auditMessage = ref('')
 const activeBatchId = ref('')
 const currentDraftId = ref('')
 const submissionResult = ref<DraftSubmitResponse | null>(null)
 const currentDraftRecord = ref<DraftRecord | null>(null)
+const auditEvents = ref<AuditEventRecord[]>([])
+const activeAuditFilter = ref<AuditEventFilter>('all')
+const activeAuditTimeRange = ref<AuditTimeRange>('all')
+const auditKeyword = ref('')
+const auditKeywordInput = ref('')
 const isAdminUnlocked = ref(hasAdminToken())
 const adminTokenInput = ref('')
 const adminAuthMessage = ref('')
+const adminDataMessage = ref('')
+const route = useRoute()
+const router = useRouter()
 
 const draftForm = reactive<DraftUpdatePayload>({
   title: '[草稿] 请选择反馈后生成标题',
   body_markdown: '摘要\n\n关联标识\n\n用户信号数量',
 })
+
+const auditFilterOptions: Array<{ value: AuditEventFilter; label: string }> = [
+  { value: 'all', label: '全部事件' },
+  { value: 'admin_auth_failed', label: '鉴权失败' },
+  { value: 'admin_action_succeeded', label: '成功操作' },
+]
+
+const auditTimeRangeOptions: Array<{ value: AuditTimeRange; label: string }> = [
+  { value: 'all', label: '全部时间' },
+  { value: '10m', label: '10 分钟' },
+  { value: '1h', label: '1 小时' },
+  { value: '24h', label: '24 小时' },
+]
 
 const statusCounts = computed(() => ({
   pending: pendingItems.value.length,
@@ -301,6 +420,13 @@ const queueSections = computed(() => {
 })
 
 const activeReferenceItem = computed(() => queueItems.value.find((item) => item.id === activeReferenceId.value) || null)
+
+const allPendingSelected = computed(() => {
+  if (queueStatus.value !== 'pending' || !queueItems.value.length) {
+    return false
+  }
+  return queueItems.value.every((item) => selectedIds.value.includes(item.id))
+})
 
 const reviewItems = computed(() => {
   if (queueStatus.value === 'pending') {
@@ -503,6 +629,124 @@ function excerpt(text: string, maxLength = 96): string {
   return `${text.slice(0, maxLength)}...`
 }
 
+function getAuditEventLabel(event: AuditEventRecord): string {
+  if (event.event_type === 'admin_auth_failed') {
+    return '管理员鉴权失败'
+  }
+  return event.action ? `管理员操作成功 · ${event.action}` : '管理员操作成功'
+}
+
+function parseAuditFilter(value: unknown): AuditEventFilter {
+  return value === 'admin_auth_failed' || value === 'admin_action_succeeded' ? value : 'all'
+}
+
+function parseAuditTimeRange(value: unknown): AuditTimeRange {
+  return value === '10m' || value === '1h' || value === '24h' ? value : 'all'
+}
+
+function parseAuditKeyword(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 120) : ''
+}
+
+function parseQueueStatus(value: unknown): QueueStatus {
+  return value === 'grouped' || value === 'submitted' ? value : 'pending'
+}
+
+function parseContextId(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 64) : ''
+}
+
+function getAdminRouteContext(): AdminRouteContext {
+  return {
+    queueStatus: parseQueueStatus(route.query.adminQueue),
+    batchId: parseContextId(route.query.batchId),
+    draftId: parseContextId(route.query.draftId),
+  }
+}
+
+function syncAdminContextToRoute(): void {
+  const nextQuery = { ...route.query }
+  if (queueStatus.value === 'pending') {
+    delete nextQuery.adminQueue
+  } else {
+    nextQuery.adminQueue = queueStatus.value
+  }
+
+  if (!activeBatchId.value) {
+    delete nextQuery.batchId
+  } else {
+    nextQuery.batchId = activeBatchId.value
+  }
+
+  if (!currentDraftId.value) {
+    delete nextQuery.draftId
+  } else {
+    nextQuery.draftId = currentDraftId.value
+  }
+
+  void router.replace({ query: nextQuery })
+}
+
+function syncAuditFiltersToRoute(): void {
+  const nextQuery = { ...route.query }
+  if (activeAuditFilter.value === 'all') {
+    delete nextQuery.auditEventType
+  } else {
+    nextQuery.auditEventType = activeAuditFilter.value
+  }
+
+  if (activeAuditTimeRange.value === 'all') {
+    delete nextQuery.auditTimeRange
+  } else {
+    nextQuery.auditTimeRange = activeAuditTimeRange.value
+  }
+
+  if (!auditKeyword.value) {
+    delete nextQuery.auditKeyword
+  } else {
+    nextQuery.auditKeyword = auditKeyword.value
+  }
+
+  void router.replace({ query: nextQuery })
+}
+
+function restoreAuditFiltersFromRoute(): void {
+  activeAuditFilter.value = parseAuditFilter(route.query.auditEventType)
+  activeAuditTimeRange.value = parseAuditTimeRange(route.query.auditTimeRange)
+  auditKeyword.value = parseAuditKeyword(route.query.auditKeyword)
+  auditKeywordInput.value = auditKeyword.value
+}
+
+function restoreQueueStatusFromRoute(): void {
+  queueStatus.value = getAdminRouteContext().queueStatus
+}
+
+function describeAuditEventTime(value: string): string {
+  const timestamp = toComparableDate(value)
+  if (!timestamp) {
+    return formatTimestamp(value)
+  }
+  return timestamp.toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function describeAuditEvent(event: AuditEventRecord): string {
+  if (event.event_type === 'admin_auth_failed') {
+    return `管理接口 ${event.path} 出现一次鉴权失败请求。`
+  }
+  if (event.action && event.resource_id) {
+    return `管理员完成 ${event.action}，关联资源 ${event.resource_id}。`
+  }
+  if (event.action) {
+    return `管理员完成 ${event.action}。`
+  }
+  return `管理员请求 ${event.path} 执行成功。`
+}
+
 function getMissingFieldCount(item: FeedbackItem): number {
   let count = 0
   if (!item.expected_behavior) {
@@ -592,6 +836,7 @@ function switchQueue(status: QueueStatus): void {
   if (status !== 'pending') {
     selectedIds.value = []
   }
+  syncAdminContextToRoute()
 }
 
 function setActiveAdminSection(section: AdminSection): void {
@@ -635,6 +880,15 @@ function handleQueueItemClick(item: FeedbackItem): void {
   }
   resetProcessingContext()
   activeReferenceId.value = item.id
+  activeBatchId.value = item.batch_id || ''
+  if (item.draft_id) {
+    void loadDraft(item.draft_id)
+    return
+  }
+  if (item.batch_integration_error) {
+    draftMessage.value = `上次生成失败：${item.batch_integration_error}。可重新生成草稿。`
+  }
+  syncAdminContextToRoute()
   void focusAdminSection('review')
 }
 
@@ -651,6 +905,22 @@ function toggleSelection(feedbackId: string): void {
   void focusAdminSection('review')
 }
 
+function toggleCurrentPendingSelection(): void {
+  if (queueStatus.value !== 'pending') {
+    return
+  }
+
+  if (allPendingSelected.value) {
+    selectedIds.value = []
+    resetProcessingContext()
+    return
+  }
+
+  resetProcessingContext()
+  selectedIds.value = queueItems.value.map((item) => item.id)
+  void focusAdminSection('review')
+}
+
 function resetDraftEditor(): void {
   currentDraftId.value = ''
   currentDraftRecord.value = null
@@ -662,31 +932,159 @@ function resetDraftEditor(): void {
 function resetProcessingContext(): void {
   activeBatchId.value = ''
   resetDraftEditor()
+  syncAdminContextToRoute()
+}
+
+function clearAdminQueueState(): void {
+  pendingItems.value = []
+  groupedItems.value = []
+  submittedItems.value = []
+  selectedIds.value = []
+  activeReferenceId.value = ''
+}
+
+function clearAuditState(): void {
+  auditEvents.value = []
+  auditMessage.value = ''
+  activeAuditFilter.value = 'all'
+  activeAuditTimeRange.value = 'all'
+  auditKeyword.value = ''
+  auditKeywordInput.value = ''
+}
+
+function clearAdminWorkspaceState(): void {
+  clearAdminQueueState()
+  clearAuditState()
+  batchMessage.value = ''
+  draftMessage.value = ''
+  resetProcessingContext()
+}
+
+function relockAdmin(message: string): void {
+  clearAdminToken()
+  sectionObserver?.disconnect()
+  isAdminUnlocked.value = false
+  adminDataMessage.value = ''
+  adminAuthMessage.value = message
+  clearAdminWorkspaceState()
+}
+
+function getResponseErrorStatus(response: ApiEnvelope<unknown>): number | undefined {
+  return response.success ? undefined : response.http_status
+}
+
+function getErrorHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || !error || !('httpStatus' in error)) {
+    return undefined
+  }
+  const status = (error as { httpStatus?: unknown }).httpStatus
+  return typeof status === 'number' ? status : undefined
+}
+
+function isAuthFailureStatus(status: number | undefined): boolean {
+  return status === 401 || status === 403
 }
 
 async function loadFeedbackByStatus(status: QueueStatus): Promise<FeedbackItem[]> {
   const response = await apiGet<PaginatedResponse<FeedbackItem>>(buildAdminApiPath(`/feedback?status=${status}`))
-  return response.success ? response.data.items : []
+  if (!response.success) {
+    throw Object.assign(new Error(response.message || 'Failed to load feedback'), {
+      httpStatus: getResponseErrorStatus(response),
+    })
+  }
+  return response.data.items
 }
 
-async function loadAdminData(): Promise<void> {
+async function loadAuditEvents(): Promise<void> {
   if (!isAdminUnlocked.value) {
     return
   }
-  loading.value = true
-  const [pending, grouped, submitted] = await Promise.all([
-    loadFeedbackByStatus('pending'),
-    loadFeedbackByStatus('grouped'),
-    loadFeedbackByStatus('submitted'),
-  ])
-  pendingItems.value = pending
-  groupedItems.value = grouped
-  submittedItems.value = submitted
-  selectedIds.value = selectedIds.value.filter((id) => pendingItems.value.some((item) => item.id === id))
-  if (activeReferenceId.value && !queueItems.value.some((item) => item.id === activeReferenceId.value)) {
-    activeReferenceId.value = ''
+
+  loadingAuditEvents.value = true
+  auditMessage.value = ''
+  try {
+    const searchParams = new URLSearchParams({ page_size: '8' })
+    if (activeAuditFilter.value !== 'all') {
+      searchParams.set('event_type', activeAuditFilter.value)
+    }
+    if (activeAuditTimeRange.value !== 'all') {
+      searchParams.set('time_range', activeAuditTimeRange.value)
+    }
+    if (auditKeyword.value) {
+      searchParams.set('keyword', auditKeyword.value)
+    }
+    const response = await apiGet<PaginatedResponse<AuditEventRecord>>(buildAdminApiPath(`/audit-events?${searchParams.toString()}`))
+    if (response.success) {
+      auditEvents.value = response.data.items
+      return
+    }
+
+    auditEvents.value = []
+    auditMessage.value = response.message || '审计事件加载失败，请稍后重试。'
+  } catch {
+    auditEvents.value = []
+    auditMessage.value = '审计事件加载失败，请稍后重试。'
+  } finally {
+    loadingAuditEvents.value = false
   }
-  loading.value = false
+}
+
+async function applyAuditFilter(filter: AuditEventFilter): Promise<void> {
+  if (activeAuditFilter.value === filter) {
+    return
+  }
+  activeAuditFilter.value = filter
+  syncAuditFiltersToRoute()
+  await loadAuditEvents()
+}
+
+async function applyAuditTimeRange(timeRange: AuditTimeRange): Promise<void> {
+  if (activeAuditTimeRange.value === timeRange) {
+    return
+  }
+  activeAuditTimeRange.value = timeRange
+  syncAuditFiltersToRoute()
+  await loadAuditEvents()
+}
+
+async function applyAuditKeyword(): Promise<void> {
+  auditKeyword.value = auditKeywordInput.value.trim()
+  syncAuditFiltersToRoute()
+  await loadAuditEvents()
+}
+
+async function loadAdminData(options: { relockOnAuthFailure?: boolean } = {}): Promise<boolean> {
+  if (!isAdminUnlocked.value) {
+    return false
+  }
+  loading.value = true
+  try {
+    adminDataMessage.value = ''
+    const [pending, grouped, submitted] = await Promise.all([
+      loadFeedbackByStatus('pending'),
+      loadFeedbackByStatus('grouped'),
+      loadFeedbackByStatus('submitted'),
+    ])
+    pendingItems.value = pending
+    groupedItems.value = grouped
+    submittedItems.value = submitted
+    selectedIds.value = selectedIds.value.filter((id) => pendingItems.value.some((item) => item.id === id))
+    if (activeReferenceId.value && !queueItems.value.some((item) => item.id === activeReferenceId.value)) {
+      activeReferenceId.value = ''
+    }
+    syncAdminContextToRoute()
+    return true
+  } catch (error) {
+    if (options.relockOnAuthFailure && isAuthFailureStatus(getErrorHttpStatus(error))) {
+      relockAdmin('管理 token 无效，请重新输入。')
+      return false
+    }
+    clearAdminQueueState()
+    adminDataMessage.value = '管理数据加载失败，请检查后端服务或管理 token。'
+    return false
+  } finally {
+    loading.value = false
+  }
 }
 
 async function unlockAdmin(): Promise<void> {
@@ -699,7 +1097,11 @@ async function unlockAdmin(): Promise<void> {
   setAdminToken(token)
   isAdminUnlocked.value = true
   adminAuthMessage.value = ''
-  await loadAdminData()
+  const loaded = await loadAdminData({ relockOnAuthFailure: true })
+  if (!loaded) {
+    return
+  }
+  await loadAuditEvents()
   await nextTick()
   setupSectionObserver()
 }
@@ -717,35 +1119,85 @@ async function createBatch(): Promise<void> {
     feedback_item_ids: selectedIds.value,
     confirm_mixed_related_ids: batchSummary.value.isMixed,
   }
-  const response = await apiPost<DraftBatchCreateResponse, DraftBatchCreatePayload>(buildAdminApiPath('/draft-batches'), payload)
+  try {
+    const response = await apiPost<DraftBatchCreateResponse, DraftBatchCreatePayload>(buildAdminApiPath('/draft-batches'), payload)
 
-  if (response.success) {
-    batchMessage.value = `批次创建成功：${response.data.id}`
-    activeBatchId.value = response.data.id
-    selectedIds.value = []
-    resetDraftEditor()
-    await loadAdminData()
-    await focusAdminSection('draft')
-  } else {
-    batchMessage.value = response.message || '批次创建失败'
+    if (response.success) {
+      batchMessage.value = `批次创建成功：${response.data.id}`
+      activeBatchId.value = response.data.id
+      syncAdminContextToRoute()
+      selectedIds.value = []
+      resetDraftEditor()
+      await loadAdminData()
+      await focusAdminSection('draft')
+    } else {
+      batchMessage.value = response.message || '批次创建失败'
+    }
+  } catch {
+    batchMessage.value = '批次创建失败，请检查网络后重试。'
+  } finally {
+    creatingBatch.value = false
   }
-
-  creatingBatch.value = false
 }
 
 async function loadDraft(draftId: string): Promise<void> {
-  const response = await apiGet<DraftRecord>(buildAdminApiPath(`/drafts/${draftId}`))
-  if (response.success) {
-    currentDraftId.value = response.data.id
-    currentDraftRecord.value = response.data
-    draftForm.title = response.data.title
-    draftForm.body_markdown = response.data.body_markdown
-    submissionResult.value = null
-    await focusAdminSection('draft')
-    draftMessage.value = `草稿已加载，更新时间 ${response.data.updated_at}`
-  } else {
-    draftMessage.value = response.message || '草稿加载失败'
+  try {
+    const response = await apiGet<DraftRecord>(buildAdminApiPath(`/drafts/${draftId}`))
+    if (response.success) {
+      currentDraftId.value = response.data.id
+      currentDraftRecord.value = response.data
+      draftForm.title = response.data.title
+      draftForm.body_markdown = response.data.body_markdown
+      submissionResult.value = null
+      syncAdminContextToRoute()
+      await focusAdminSection('draft')
+      draftMessage.value = `草稿已加载，更新时间 ${response.data.updated_at}`
+    } else {
+      draftMessage.value = response.message || '草稿加载失败'
+    }
+  } catch {
+    draftMessage.value = '草稿加载失败，请检查网络后重试。'
   }
+}
+
+async function restoreAdminContextFromRoute(): Promise<void> {
+  const { queueStatus: restoredQueueStatus, batchId, draftId } = getAdminRouteContext()
+  queueStatus.value = restoredQueueStatus
+
+  const batchedItems = [...groupedItems.value, ...submittedItems.value]
+
+  if (draftId) {
+    const matchedDraftItem = batchedItems.find((item) => item.draft_id === draftId)
+    if (matchedDraftItem) {
+      queueStatus.value = matchedDraftItem.status === 'submitted' ? 'submitted' : 'grouped'
+      activeReferenceId.value = matchedDraftItem.id
+      activeBatchId.value = matchedDraftItem.batch_id || batchId
+      await loadDraft(draftId)
+      syncAdminContextToRoute()
+      return
+    }
+  }
+
+  if (batchId) {
+    const matchedBatchItem = batchedItems.find((item) => item.batch_id === batchId)
+    if (matchedBatchItem) {
+      queueStatus.value = matchedBatchItem.status === 'submitted' ? 'submitted' : 'grouped'
+      activeReferenceId.value = matchedBatchItem.id
+      activeBatchId.value = batchId
+      if (matchedBatchItem.batch_integration_error) {
+        draftMessage.value = `上次生成失败：${matchedBatchItem.batch_integration_error}。可重新生成草稿。`
+      }
+      syncAdminContextToRoute()
+      return
+    }
+  }
+
+  if (draftId || batchId) {
+    activeReferenceId.value = ''
+    resetProcessingContext()
+  }
+
+  syncAdminContextToRoute()
 }
 
 async function integrateDraft(): Promise<void> {
@@ -756,18 +1208,22 @@ async function integrateDraft(): Promise<void> {
 
   integratingDraft.value = true
   draftMessage.value = ''
-  const response = await apiPost<DraftIntegrateResponse, Record<string, never>>(
-    buildAdminApiPath(`/draft-batches/${activeBatchId.value}/integrate`),
-    {},
-  )
+  try {
+    const response = await apiPost<DraftIntegrateResponse, Record<string, never>>(
+      buildAdminApiPath(`/draft-batches/${activeBatchId.value}/integrate`),
+      {},
+    )
 
-  if (response.success) {
-    await loadDraft(response.data.draft_id)
-  } else {
-    draftMessage.value = response.message || '草稿生成失败'
+    if (response.success) {
+      await loadDraft(response.data.draft_id)
+    } else {
+      draftMessage.value = response.message || '草稿生成失败'
+    }
+  } catch {
+    draftMessage.value = '草稿生成失败，请检查网络后重试。'
+  } finally {
+    integratingDraft.value = false
   }
-
-  integratingDraft.value = false
 }
 
 async function saveDraft(): Promise<void> {
@@ -781,33 +1237,38 @@ async function saveDraft(): Promise<void> {
     title: draftForm.title,
     body_markdown: draftForm.body_markdown,
   }
-  const response = await apiPut<{ id: string; status: string; updated_at: string }, DraftUpdatePayload>(
-    buildAdminApiPath(`/drafts/${currentDraftId.value}`),
-    payload,
-  )
+  try {
+    const response = await apiPut<{ id: string; status: string; updated_at: string }, DraftUpdatePayload>(
+      buildAdminApiPath(`/drafts/${currentDraftId.value}`),
+      payload,
+    )
 
-  if (response.success) {
-    currentDraftRecord.value = {
-      ...(currentDraftRecord.value || {
-        id: currentDraftId.value,
-        batch_id: activeBatchId.value,
+    if (response.success) {
+      currentDraftRecord.value = {
+        ...(currentDraftRecord.value || {
+          id: currentDraftId.value,
+          batch_id: activeBatchId.value,
+          title: draftForm.title,
+          body_markdown: draftForm.body_markdown,
+          related_id_summary: draftRelatedIdSummary.value,
+          status: response.data.status,
+          updated_at: response.data.updated_at,
+        }),
         title: draftForm.title,
         body_markdown: draftForm.body_markdown,
-        related_id_summary: draftRelatedIdSummary.value,
         status: response.data.status,
         updated_at: response.data.updated_at,
-      }),
-      title: draftForm.title,
-      body_markdown: draftForm.body_markdown,
-      status: response.data.status,
-      updated_at: response.data.updated_at,
+      }
     }
-  }
 
-  draftMessage.value = response.success
-    ? `草稿保存成功，更新时间 ${response.data.updated_at}`
-    : response.message || '草稿保存失败'
-  savingDraft.value = false
+    draftMessage.value = response.success
+      ? `草稿保存成功，更新时间 ${response.data.updated_at}`
+      : response.message || '草稿保存失败'
+  } catch {
+    draftMessage.value = '草稿保存失败，请检查网络后重试。'
+  } finally {
+    savingDraft.value = false
+  }
 }
 
 async function submitDraftToGithub(): Promise<void> {
@@ -817,21 +1278,25 @@ async function submitDraftToGithub(): Promise<void> {
   }
 
   submittingDraft.value = true
-  const response = await apiPost<DraftSubmitResponse, Record<string, never>>(
-    buildAdminApiPath(`/drafts/${currentDraftId.value}/submit`),
-    {},
-  )
+  try {
+    const response = await apiPost<DraftSubmitResponse, Record<string, never>>(
+      buildAdminApiPath(`/drafts/${currentDraftId.value}/submit`),
+      {},
+    )
 
-  if (response.success) {
-    submissionResult.value = response.data
-    draftMessage.value = `草稿已提交，GitHub Issue #${response.data.issue_number}`
-    await loadAdminData()
-    await focusAdminSection('draft')
-  } else {
-    draftMessage.value = response.message || '提交失败'
+    if (response.success) {
+      submissionResult.value = response.data
+      draftMessage.value = `草稿已提交，GitHub Issue #${response.data.issue_number}`
+      await loadAdminData()
+      await focusAdminSection('draft')
+    } else {
+      draftMessage.value = response.message || '提交失败'
+    }
+  } catch {
+    draftMessage.value = '提交失败，请检查网络后重试。'
+  } finally {
+    submittingDraft.value = false
   }
-
-  submittingDraft.value = false
 }
 
 function setupSectionObserver(): void {
@@ -875,8 +1340,15 @@ function setupSectionObserver(): void {
 }
 
 onMounted(async () => {
+  restoreAuditFiltersFromRoute()
+  restoreQueueStatusFromRoute()
   if (isAdminUnlocked.value) {
-    await loadAdminData()
+    const loaded = await loadAdminData({ relockOnAuthFailure: true })
+    if (!loaded) {
+      return
+    }
+    await restoreAdminContextFromRoute()
+    await loadAuditEvents()
     await nextTick()
     setupSectionObserver()
   }

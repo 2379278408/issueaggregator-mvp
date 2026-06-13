@@ -1,11 +1,38 @@
 const publicApiBasePath = (import.meta.env.VITE_API_BASE_PATH?.trim() || '/api').replace(/\/$/, '');
 const adminNamespace = import.meta.env.VITE_ADMIN_API_NAMESPACE?.trim() || 'workbench';
 const adminApiBasePath = `${publicApiBasePath}/admin/${adminNamespace}`;
-const bundledAdminToken = import.meta.env.VITE_ADMIN_API_TOKEN?.trim();
 const adminTokenStorageKey = 'issueAggregatorAdminToken';
 
 async function parseResponse(response) {
-    return response.json();
+    try {
+        return {
+            ...await response.json(),
+            http_status: response.status,
+        };
+    }
+    catch {
+        return {
+            success: false,
+            data: null,
+            error_code: 'INVALID_API_RESPONSE',
+            message: response.ok ? '接口返回格式异常' : `接口请求失败：HTTP ${response.status}`,
+            http_status: response.status,
+        };
+    }
+}
+async function requestApi(input, init) {
+    try {
+        const response = await fetch(input, init);
+        return parseResponse(response);
+    }
+    catch {
+        return {
+            success: false,
+            data: null,
+            error_code: 'NETWORK_ERROR',
+            message: '网络连接失败，请稍后重试',
+        };
+    }
 }
 export function buildAdminApiPath(path) {
     return `${adminApiBasePath}${path.startsWith('/') ? path : `/${path}`}`;
@@ -14,9 +41,6 @@ export function buildPublicApiPath(path) {
     return `${publicApiBasePath}${path.startsWith('/') ? path : `/${path}`}`;
 }
 function getAdminToken() {
-    if (bundledAdminToken) {
-        return bundledAdminToken;
-    }
     if (typeof window === 'undefined') {
         return undefined;
     }
@@ -31,35 +55,39 @@ export function setAdminToken(token) {
     }
     window.sessionStorage.setItem(adminTokenStorageKey, token.trim());
 }
+export function clearAdminToken() {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    window.sessionStorage.removeItem(adminTokenStorageKey);
+}
 function buildHeaders(path, includeJson = false) {
     const headers = includeJson ? { 'Content-Type': 'application/json' } : {};
-    const adminToken = path.startsWith(adminApiBasePath) ? getAdminToken() : undefined;
+    const isAdminApiPath = path === adminApiBasePath || path.startsWith(`${adminApiBasePath}/`) || path.startsWith(`${adminApiBasePath}?`);
+    const adminToken = isAdminApiPath ? getAdminToken() : undefined;
     if (adminToken) {
         headers['X-Admin-Token'] = adminToken;
     }
     return headers;
 }
 export async function apiGet(path) {
-    const response = await fetch(path, {
+    return requestApi(path, {
         headers: buildHeaders(path),
     });
-    return parseResponse(response);
 }
 export async function apiPost(path, payload) {
-    const response = await fetch(path, {
+    return requestApi(path, {
         method: 'POST',
         headers: buildHeaders(path, true),
         body: JSON.stringify(payload),
     });
-    return parseResponse(response);
 }
 export async function apiPut(path, payload) {
-    const response = await fetch(path, {
+    return requestApi(path, {
         method: 'PUT',
         headers: buildHeaders(path, true),
         body: JSON.stringify(payload),
     });
-    return parseResponse(response);
 }
 export function buildSubmittedIssueSearch(params) {
     const searchParams = new URLSearchParams();

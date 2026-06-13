@@ -3,6 +3,7 @@ export type ApiEnvelope<T> = {
   data: T
   error_code?: string
   message?: string
+  http_status?: number
 }
 
 export type SubmittedIssue = {
@@ -24,6 +25,21 @@ export type FeedbackItem = {
   status: string
   created_at: string
   submitted_at?: string | null
+  batch_id?: string | null
+  batch_status?: string | null
+  batch_integration_error?: string | null
+  draft_id?: string | null
+  draft_status?: string | null
+}
+
+export type AuditEventRecord = {
+  id: string
+  event_type: string
+  client_ip: string
+  path: string
+  action?: string | null
+  resource_id?: string | null
+  created_at: string
 }
 
 export type PaginatedResponse<T> = {
@@ -88,11 +104,37 @@ export type DraftSubmitResponse = {
 const publicApiBasePath = ((import.meta.env.VITE_API_BASE_PATH as string | undefined)?.trim() || '/api').replace(/\/$/, '')
 const adminNamespace = (import.meta.env.VITE_ADMIN_API_NAMESPACE as string | undefined)?.trim() || 'workbench'
 const adminApiBasePath = `${publicApiBasePath}/admin/${adminNamespace}`
-const bundledAdminToken = (import.meta.env.VITE_ADMIN_API_TOKEN as string | undefined)?.trim()
 const adminTokenStorageKey = 'issueAggregatorAdminToken'
 
 async function parseResponse<T>(response: Response): Promise<ApiEnvelope<T>> {
-  return response.json() as Promise<ApiEnvelope<T>>
+  try {
+    return {
+      ...((await response.json()) as ApiEnvelope<T>),
+      http_status: response.status,
+    }
+  } catch {
+    return {
+      success: false,
+      data: null as T,
+      error_code: 'INVALID_API_RESPONSE',
+      message: response.ok ? '接口返回格式异常' : `接口请求失败：HTTP ${response.status}`,
+      http_status: response.status,
+    }
+  }
+}
+
+async function requestApi<T>(input: string, init: RequestInit): Promise<ApiEnvelope<T>> {
+  try {
+    const response = await fetch(input, init)
+    return parseResponse<T>(response)
+  } catch {
+    return {
+      success: false,
+      data: null as T,
+      error_code: 'NETWORK_ERROR',
+      message: '网络连接失败，请稍后重试',
+    }
+  }
 }
 
 export function buildAdminApiPath(path: string): string {
@@ -104,9 +146,6 @@ export function buildPublicApiPath(path: string): string {
 }
 
 function getAdminToken(): string | undefined {
-  if (bundledAdminToken) {
-    return bundledAdminToken
-  }
   if (typeof window === 'undefined') {
     return undefined
   }
@@ -124,9 +163,17 @@ export function setAdminToken(token: string): void {
   window.sessionStorage.setItem(adminTokenStorageKey, token.trim())
 }
 
+export function clearAdminToken(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.sessionStorage.removeItem(adminTokenStorageKey)
+}
+
 function buildHeaders(path: string, includeJson = false): HeadersInit {
   const headers: Record<string, string> = includeJson ? { 'Content-Type': 'application/json' } : {}
-  const adminToken = path.startsWith(adminApiBasePath) ? getAdminToken() : undefined
+  const isAdminApiPath = path === adminApiBasePath || path.startsWith(`${adminApiBasePath}/`) || path.startsWith(`${adminApiBasePath}?`)
+  const adminToken = isAdminApiPath ? getAdminToken() : undefined
   if (adminToken) {
     headers['X-Admin-Token'] = adminToken
   }
@@ -134,28 +181,25 @@ function buildHeaders(path: string, includeJson = false): HeadersInit {
 }
 
 export async function apiGet<T>(path: string): Promise<ApiEnvelope<T>> {
-  const response = await fetch(path, {
+  return requestApi<T>(path, {
     headers: buildHeaders(path),
   })
-  return parseResponse<T>(response)
 }
 
 export async function apiPost<TResponse, TPayload>(path: string, payload: TPayload): Promise<ApiEnvelope<TResponse>> {
-  const response = await fetch(path, {
+  return requestApi<TResponse>(path, {
     method: 'POST',
     headers: buildHeaders(path, true),
     body: JSON.stringify(payload),
   })
-  return parseResponse<TResponse>(response)
 }
 
 export async function apiPut<TResponse, TPayload>(path: string, payload: TPayload): Promise<ApiEnvelope<TResponse>> {
-  const response = await fetch(path, {
+  return requestApi<TResponse>(path, {
     method: 'PUT',
     headers: buildHeaders(path, true),
     body: JSON.stringify(payload),
   })
-  return parseResponse<TResponse>(response)
 }
 
 export function buildSubmittedIssueSearch(params: {

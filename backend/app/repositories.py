@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from urllib import error, request
@@ -30,6 +31,99 @@ from .models import (
 
 class RepositoryError(ValueError):
     pass
+
+
+class AuditEventRepository:
+    def create_event(
+        self,
+        *,
+        event_id: str,
+        event_type: str,
+        client_ip: str,
+        path: str,
+        action: str | None = None,
+        resource_id: str | None = None,
+    ) -> None:
+        with connection_context() as connection:
+            connection.execute(
+                """
+                INSERT INTO audit_events (id, event_type, client_ip, path, action, resource_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    event_type,
+                    client_ip,
+                    path,
+                    action,
+                    resource_id,
+                    utc_now_iso(),
+                ),
+            )
+
+    def count_recent_events(self, *, event_type: str, client_ip: str, since_iso: str) -> int:
+        with connection_context() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM audit_events
+                WHERE event_type = ? AND client_ip = ? AND created_at >= ?
+                """,
+                (event_type, client_ip, since_iso),
+            ).fetchone()
+        return int(row["total"])
+
+    def list_events(
+        self,
+        *,
+        event_type: str | None = None,
+        keyword: str | None = None,
+        since_iso: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, object]:
+        conditions: list[str] = []
+        params: list[object] = []
+        if event_type:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if keyword:
+            conditions.append(
+                "("
+                "client_ip LIKE ? OR path LIKE ? OR COALESCE(action, '') LIKE ? OR COALESCE(resource_id, '') LIKE ?"
+                ")"
+            )
+            keyword_pattern = f"%{keyword}%"
+            params.extend([keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern])
+        if since_iso:
+            conditions.append("created_at >= ?")
+            params.append(since_iso)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        offset = (page - 1) * page_size
+
+        with connection_context() as connection:
+            total = connection.execute(
+                f"SELECT COUNT(*) AS total FROM audit_events {where_clause}",
+                params,
+            ).fetchone()["total"]
+            rows = connection.execute(
+                f"""
+                SELECT id, event_type, client_ip, path, action, resource_id, created_at
+                FROM audit_events
+                {where_clause}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                [*params, page_size, offset],
+            ).fetchall()
+
+        return {
+            "items": [dict(row) for row in rows],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
 
 
 class FeedbackRepository:
@@ -77,7 +171,7 @@ class FeedbackRepository:
         conditions: list[str] = []
         params: list[object] = []
         if status:
-            conditions.append("status = ?")
+            conditions.append("feedback_items.status = ?")
             params.append(status.value)
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -90,10 +184,33 @@ class FeedbackRepository:
             ).fetchone()["total"]
             rows = connection.execute(
                 f"""
-                SELECT id, type, related_id, raw_content, expected_behavior, actual_behavior, status, created_at, submitted_at
+                SELECT
+                    feedback_items.id,
+                    feedback_items.type,
+                    feedback_items.related_id,
+                    feedback_items.raw_content,
+                    feedback_items.expected_behavior,
+                    feedback_items.actual_behavior,
+                    feedback_items.status,
+                    feedback_items.created_at,
+                    feedback_items.submitted_at,
+                    draft_batches.id AS batch_id,
+                    draft_batches.status AS batch_status,
+                    draft_batches.integration_error AS batch_integration_error,
+                    drafts.id AS draft_id,
+                    drafts.status AS draft_status
                 FROM feedback_items
+                LEFT JOIN draft_batch_items ON draft_batch_items.feedback_item_id = feedback_items.id
+                LEFT JOIN draft_batches ON draft_batches.id = draft_batch_items.batch_id
+                LEFT JOIN drafts ON drafts.id = (
+                    SELECT latest_drafts.id
+                    FROM drafts AS latest_drafts
+                    WHERE latest_drafts.batch_id = draft_batches.id
+                    ORDER BY latest_drafts.updated_at DESC
+                    LIMIT 1
+                )
                 {where_clause}
-                ORDER BY created_at DESC
+                ORDER BY feedback_items.created_at DESC
                 LIMIT ? OFFSET ?
                 """,
                 [*params, page_size, offset],
@@ -144,6 +261,52 @@ class FeedbackRepository:
                 [FeedbackStatus.SUBMITTED.value, submitted_at, *feedback_ids],
             )
         return cursor.rowcount
+
+    def count_recent_duplicate_feedback(self, payload: FeedbackCreatePayload, *, since_iso: str) -> int:
+        with connection_context() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM feedback_items
+                WHERE type = ?
+                  AND related_id = ?
+                  AND raw_content = ?
+                  AND COALESCE(expected_behavior, '') = COALESCE(?, '')
+                  AND COALESCE(actual_behavior, '') = COALESCE(?, '')
+                  AND created_at >= ?
+                """,
+                (
+                    payload.type,
+                    payload.related_id,
+                    payload.raw_content,
+                    payload.expected_behavior,
+                    payload.actual_behavior,
+                    since_iso,
+                ),
+            ).fetchone()
+        return int(row["total"])
+
+
+class PublicFeedbackRateLimitRepository:
+    def consume_daily_quota(self, *, ip_address: str, limit: int) -> bool:
+        if limit <= 0:
+            return False
+
+        submit_date = datetime.now(timezone.utc).date().isoformat()
+        updated_at = utc_now_iso()
+        with connection_context() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO public_feedback_ip_limits (ip_address, submit_date, submission_count, updated_at)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(ip_address, submit_date) DO UPDATE SET
+                    submission_count = submission_count + 1,
+                    updated_at = excluded.updated_at
+                WHERE public_feedback_ip_limits.submission_count < ?
+                """,
+                (ip_address, submit_date, updated_at, limit),
+            )
+        return cursor.rowcount == 1
 
 
 class DraftBatchRepository:
@@ -300,14 +463,19 @@ class DraftIntegrationService:
     def _build_draft(self, batch_id: str, feedback_items: list[FeedbackRecord]) -> DraftRecord:
         related_ids = sorted({item.related_id for item in feedback_items})
         primary_related_id = related_ids[0] if len(related_ids) == 1 else "mixed-related-ids"
-        issue_type = feedback_items[0].type.capitalize()
+        issue_type = self._issue_type_label(feedback_items[0].type)
         related_id_summary = ", ".join(related_ids)
         prompt_snapshot = self._build_prompt_snapshot(feedback_items)
         if self._should_use_ai():
-            generated = self.ai_client.create_issue_draft(prompt_snapshot=prompt_snapshot, feedback_items=feedback_items)
-            title = generated["title"]
-            body_markdown = generated["body_markdown"]
-            ai_model = self.settings.ai_model
+            try:
+                generated = self.ai_client.create_issue_draft(prompt_snapshot=prompt_snapshot, feedback_items=feedback_items)
+                title = generated["title"]
+                body_markdown = generated["body_markdown"]
+                ai_model = self.settings.ai_model
+            except AIIntegrationError:
+                title = f"[{issue_type}] {primary_related_id}"
+                body_markdown = self._build_markdown(primary_related_id, feedback_items)
+                ai_model = "deterministic-template-v1"
         else:
             title = f"[{issue_type}] {primary_related_id}"
             body_markdown = self._build_markdown(primary_related_id, feedback_items)
@@ -327,12 +495,29 @@ class DraftIntegrationService:
     def _build_prompt_snapshot(self, feedback_items: list[FeedbackRecord]) -> str:
         lines = []
         for item in feedback_items:
-            lines.append(f"- {item.type} | {item.related_id} | {item.raw_content}")
+            details = [
+                f"类型: {self._issue_type_label(item.type)}",
+                f"关联标识: {item.related_id}",
+                f"反馈内容: {item.raw_content}",
+            ]
+            if item.expected_behavior:
+                details.append(f"期望表现: {item.expected_behavior}")
+            if item.actual_behavior:
+                details.append(f"实际表现: {item.actual_behavior}")
+            lines.append("- " + " | ".join(details))
         return "\n".join(lines)
+
+    def _issue_type_label(self, issue_type: str) -> str:
+        return {
+            "bug": "缺陷",
+            "feature": "新功能",
+            "enhancement": "优化",
+            "question": "问题",
+        }.get(issue_type, issue_type)
 
     def _build_markdown(self, primary_related_id: str, feedback_items: list[FeedbackRecord]) -> str:
         summary_lines = [f"- {item.raw_content}" for item in feedback_items]
-        background_lines = [f"- {item.type}: {item.raw_content}" for item in feedback_items]
+        background_lines = [f"- {self._issue_type_label(item.type)}：{item.raw_content}" for item in feedback_items]
         steps_lines = []
         expected_lines = []
         actual_lines = []
@@ -340,37 +525,38 @@ class DraftIntegrationService:
 
         for index, item in enumerate(feedback_items, start=1):
             if item.expected_behavior and item.actual_behavior:
-                steps_lines.append(f"{index}. Review feedback item {item.id} and reproduce the reported flow.")
+                steps_lines.append(f"{index}. 根据反馈 {item.id} 复现关联流程：{item.related_id}。")
             if item.expected_behavior:
                 expected_lines.append(f"- {item.expected_behavior}")
             else:
-                missing_lines.append(f"- Missing expected behavior for feedback item {item.id}")
+                missing_lines.append(f"- 反馈 {item.id} 缺少期望表现。")
             if item.actual_behavior:
                 actual_lines.append(f"- {item.actual_behavior}")
             else:
-                missing_lines.append(f"- Missing actual behavior for feedback item {item.id}")
+                missing_lines.append(f"- 反馈 {item.id} 缺少实际表现。")
 
         if not steps_lines:
-            steps_lines.append("1. Reproduction steps were not provided in the collected feedback.")
-            missing_lines.append("- Missing reproducible steps across the selected feedback items")
+            steps_lines.append("1. 当前反馈未提供完整复现步骤，需要根据关联标识定位对应流程后补充。")
+            missing_lines.append("- 所选反馈缺少可直接执行的复现步骤。")
         if not expected_lines:
-            expected_lines.append("- Expected behavior details were not provided.")
+            expected_lines.append("- 当前反馈未提供明确期望表现。")
         if not actual_lines:
-            actual_lines.append("- Actual behavior details were not provided.")
+            actual_lines.append("- 当前反馈未提供明确实际表现。")
         if not missing_lines:
-            missing_lines.append("- No major missing information identified from the selected feedback items.")
+            missing_lines.append("- 暂未发现影响初步排查的关键信息缺口。")
 
         return "\n\n".join(
             [
-                "Summary\n" + "\n".join(summary_lines),
-                f"Related ID\n{primary_related_id}",
-                f"User Signals Count\n{len(feedback_items)}",
-                "Background\n" + "\n".join(background_lines),
-                "Steps to Reproduce\n" + "\n".join(steps_lines),
-                "Expected Behavior\n" + "\n".join(expected_lines),
-                "Actual Behavior\n" + "\n".join(actual_lines),
-                "Impact\n- Multiple users reported friction around this workflow.",
-                "Missing Information\n" + "\n".join(missing_lines),
+                "## 摘要\n" + "\n".join(summary_lines),
+                f"## 关联标识\n{primary_related_id}",
+                f"## 用户反馈数量\n{len(feedback_items)}",
+                "## 背景\n" + "\n".join(background_lines),
+                "## 复现线索\n" + "\n".join(steps_lines),
+                "## 期望表现\n" + "\n".join(expected_lines),
+                "## 实际表现\n" + "\n".join(actual_lines),
+                "## 影响范围\n- 多条用户反馈指向该关联流程，建议优先确认是否影响主路径体验。",
+                "## 待补充信息\n" + "\n".join(missing_lines),
+                "## 原始反馈\n" + "\n".join(summary_lines),
             ]
         )
 
@@ -380,6 +566,19 @@ class AIIntegrationError(ValueError):
 
 
 class OpenAICompatibleClient:
+    REQUIRED_SECTION_HEADINGS = (
+        "## 摘要",
+        "## 关联标识",
+        "## 用户反馈数量",
+        "## 背景",
+        "## 复现线索",
+        "## 期望表现",
+        "## 实际表现",
+        "## 影响范围",
+        "## 待补充信息",
+        "## 原始反馈",
+    )
+
     def __init__(self) -> None:
         self.settings = get_settings()
 
@@ -400,9 +599,9 @@ class OpenAICompatibleClient:
                     {
                         "role": "system",
                         "content": (
-                            "You convert grouped user feedback into one concise GitHub issue. "
-                            "Return compact strict JSON with title and body_markdown fields only. "
-                            "Do not wrap the JSON in markdown fences."
+                            "你是产品问题整理助手，负责把多条用户反馈整理成一条可直接提交到 GitHub 的中文 Issue。"
+                            "只返回严格 JSON，字段只能包含 title 和 body_markdown。"
+                            "不要使用 markdown 代码块包裹 JSON。"
                         ),
                     },
                     {
@@ -429,8 +628,7 @@ class OpenAICompatibleClient:
         except TimeoutError as exc:
             raise AIIntegrationError("AI API request timed out") from exc
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8") if exc.fp else str(exc)
-            raise AIIntegrationError(detail or f"AI API request failed with status {exc.code}") from exc
+            raise AIIntegrationError(f"AI API request failed with status {exc.code}") from exc
         except error.URLError as exc:
             raise AIIntegrationError(str(exc.reason)) from exc
         except json.JSONDecodeError as exc:
@@ -443,6 +641,7 @@ class OpenAICompatibleClient:
         body_markdown = str(parsed.get("body_markdown", "")).strip()
         if not title or not body_markdown:
             raise AIIntegrationError("AI response must include title and body_markdown")
+        self._validate_issue_draft(title=title, body_markdown=body_markdown)
         return {"title": title[:200], "body_markdown": body_markdown}
 
     def _build_chat_completions_endpoint(self, base_url: str) -> str:
@@ -454,13 +653,17 @@ class OpenAICompatibleClient:
     def _build_user_prompt(self, *, prompt_snapshot: str, feedback_items: list[FeedbackRecord]) -> str:
         return "\n\n".join(
             [
-                "Create a single GitHub issue draft from these grouped feedback items.",
-                "Requirements:",
-                "- Keep the title specific and under 100 characters.",
-                "- Include Summary, Background, Steps to Reproduce, Expected Behavior, Actual Behavior, Impact, and Missing Information sections.",
-                "- Preserve concrete user details from the feedback.",
-                f"User signals count: {len(feedback_items)}",
-                "Feedback items:",
+                "请根据以下已分组用户反馈，生成一条中文 GitHub Issue 草稿。",
+                "输出要求：",
+                "- title 使用中文，格式为：[缺陷] 具体问题、[优化] 具体改进、[新功能] 具体能力或 [问题] 具体疑问。",
+                "- title 控制在 50 个中文字符以内，避免泛泛描述。",
+                "- body_markdown 使用中文 Markdown。",
+                "- body_markdown 必须包含这些二级标题：摘要、关联标识、用户反馈数量、背景、复现线索、期望表现、实际表现、影响范围、待补充信息、原始反馈。",
+                "- 保留用户反馈里的具体场景、症状、期望和实际表现。",
+                "- 对缺失信息明确写入待补充信息，不要编造复现步骤、错误码或环境。",
+                "- 多条反馈表达同一问题时合并归纳，保留关键差异。",
+                f"用户反馈数量：{len(feedback_items)}",
+                "反馈项：",
                 prompt_snapshot,
             ]
         )
@@ -496,6 +699,17 @@ class OpenAICompatibleClient:
         if not isinstance(parsed, dict):
             raise AIIntegrationError("AI response JSON must be an object")
         return parsed
+
+    def _validate_issue_draft(self, *, title: str, body_markdown: str) -> None:
+        valid_prefixes = ("[缺陷]", "[优化]", "[新功能]", "[问题]")
+        if not title.startswith(valid_prefixes):
+            raise AIIntegrationError("AI response title did not follow the required Chinese format")
+
+        missing_headings = [heading for heading in self.REQUIRED_SECTION_HEADINGS if heading not in body_markdown]
+        if missing_headings:
+            raise AIIntegrationError(
+                "AI response body did not include required headings: " + ", ".join(missing_headings)
+            )
 
 
 class DraftRepository:
@@ -607,7 +821,7 @@ class SubmissionRepository:
         with connection_context() as connection:
             total = connection.execute(
                 f"""
-                SELECT COUNT(*) AS total
+                SELECT COUNT(DISTINCT submissions.id) AS total
                 FROM submissions
                 JOIN drafts ON drafts.id = submissions.draft_id
                 LEFT JOIN draft_batches ON draft_batches.id = drafts.batch_id
@@ -620,12 +834,16 @@ class SubmissionRepository:
 
             rows = connection.execute(
                 f"""
-                SELECT DISTINCT
+                SELECT
                     submissions.github_issue_number AS issue_number,
                     drafts.title AS title,
                     submissions.github_issue_url AS issue_url,
                     submissions.related_id AS related_id,
-                    COALESCE(feedback_items.type, 'bug') AS type,
+                    CASE
+                        WHEN COUNT(DISTINCT feedback_items.type) = 0 THEN 'bug'
+                        WHEN COUNT(DISTINCT feedback_items.type) = 1 THEN MIN(feedback_items.type)
+                        ELSE 'mixed'
+                    END AS type,
                     submissions.submitted_at AS submitted_at
                 FROM submissions
                 JOIN drafts ON drafts.id = submissions.draft_id
@@ -633,6 +851,7 @@ class SubmissionRepository:
                 LEFT JOIN draft_batch_items ON draft_batch_items.batch_id = draft_batches.id
                 LEFT JOIN feedback_items ON feedback_items.id = draft_batch_items.feedback_item_id
                 {where_clause}
+                GROUP BY submissions.id, drafts.title, submissions.github_issue_number, submissions.github_issue_url, submissions.related_id, submissions.submitted_at
                 ORDER BY submissions.submitted_at DESC
                 LIMIT ? OFFSET ?
                 """,
@@ -780,13 +999,23 @@ class GitHubIssueClient:
                     "github_state": response_body.get("state"),
                 }
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8") if exc.fp else str(exc)
-            raise GitHubSubmissionError(detail or f"GitHub API request failed with status {exc.code}") from exc
+            raise GitHubSubmissionError(f"GitHub API request failed with status {exc.code}") from exc
         except error.URLError as exc:
             raise GitHubSubmissionError(str(exc.reason)) from exc
 
 
 class DraftSubmissionService:
+    MAX_GITHUB_TITLE_LENGTH = 160
+    MAX_GITHUB_BODY_LENGTH = 12000
+    SENSITIVE_CONTENT_PATTERNS = (
+        re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+        re.compile(r"glpat-[A-Za-z0-9_-]{20,}"),
+        re.compile(r"sk-[A-Za-z0-9]{20,}"),
+        re.compile(r"AKIA[0-9A-Z]{16}"),
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
+        re.compile(r"authorization\s*:\s*bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
+    )
+
     def __init__(self) -> None:
         self.settings = get_settings()
         self.batch_repository = DraftBatchRepository()
@@ -804,6 +1033,7 @@ class DraftSubmissionService:
         if not batch:
             raise RepositoryError("Draft batch not found")
 
+        self._validate_draft_content(draft)
         self._enforce_rate_limits(draft.related_id_summary)
 
         try:
@@ -854,3 +1084,14 @@ class DraftSubmissionService:
             )
             if per_related_count > 0:
                 raise RepositoryError(f"related_id rate limit reached for {related_id}")
+
+    def _validate_draft_content(self, draft: DraftRecord) -> None:
+        if len(draft.title) > self.MAX_GITHUB_TITLE_LENGTH:
+            raise RepositoryError("Draft title exceeds safe submission limit")
+        if len(draft.body_markdown) > self.MAX_GITHUB_BODY_LENGTH:
+            raise RepositoryError("Draft body exceeds safe submission limit")
+
+        combined_content = f"{draft.title}\n{draft.body_markdown}"
+        for pattern in self.SENSITIVE_CONTENT_PATTERNS:
+            if pattern.search(combined_content):
+                raise RepositoryError("Draft content contains sensitive credential-like content")

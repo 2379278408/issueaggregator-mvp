@@ -12,7 +12,7 @@
         </div>
         <div class="intake-hero__metrics">
           <span>已提交 Issue</span>
-          <strong>{{ submittedIssues.length }}</strong>
+          <strong>{{ submittedIssueTotal }}</strong>
         </div>
       </header>
 
@@ -27,20 +27,55 @@
           </div>
 
           <form class="composer-form" @submit.prevent="submitFeedback">
+            <section class="feedback-type-picker" aria-labelledby="feedback-type-title">
+              <div class="feedback-type-picker__head">
+                <div>
+                  <span id="feedback-type-title">反馈类型</span>
+                  <strong>{{ selectedTypeLabel || '请选择反馈类型' }}</strong>
+                </div>
+                <small>主动选择后再提交，便于后台按类型聚合。</small>
+              </div>
+              <div class="feedback-type-grid" role="radiogroup" aria-label="反馈类型">
+                <button
+                  v-for="option in feedbackTypeOptions"
+                  :key="option.value"
+                  class="feedback-type-card"
+                  :class="{ 'feedback-type-card--active': form.type === option.value }"
+                  type="button"
+                  role="radio"
+                  :aria-checked="form.type === option.value"
+                  @click="selectFeedbackType(option.value)"
+                >
+                  <span>{{ option.label }}</span>
+                  <small>{{ option.description }}</small>
+                </button>
+              </div>
+            </section>
+
             <div class="composer-row">
               <label class="field">
-                <span>反馈类型</span>
-                <select v-model="form.type" class="select">
-                  <option value="bug">缺陷</option>
-                  <option value="feature">新功能</option>
-                  <option value="enhancement">优化</option>
-                  <option value="question">问题</option>
-                </select>
-              </label>
-              <label class="field">
                 <span>关联标识</span>
-                <input v-model="form.related_id" class="input" placeholder="editor-copy-button" @blur="loadDuplicateIssues" />
+                <input v-model="form.related_id" class="input" placeholder="editor-copy-button" @blur="handleRelatedIdBlur" />
+                <small class="field-helper">用小写英文、数字和短横线，例如 github-submit-flow；空格和下划线会自动转成短横线。</small>
               </label>
+            </div>
+
+            <div class="related-id-guide" aria-label="关联标识填写示例">
+              <div>
+                <strong>怎么填关联标识</strong>
+                <p>按页面、组件、接口或业务流程命名，使用小写英文、数字和短横线。</p>
+              </div>
+              <div class="related-id-examples">
+                <button
+                  v-for="example in relatedExamples"
+                  :key="example"
+                  class="related-id-chip"
+                  type="button"
+                  @click="applyRelatedExample(example)"
+                >
+                  {{ example }}
+                </button>
+              </div>
             </div>
 
             <label class="field field--full composer-main-field">
@@ -76,7 +111,7 @@
               </div>
             </div>
             <p v-if="duplicateIssues.length">已有 {{ duplicateIssues.length }} 条相关记录。</p>
-            <p v-else>输入标识后显示相关 Issue。</p>
+            <p v-else>输入关联标识后显示同主题 Issue，提交前可判断是否已经有人反馈。</p>
             <ul v-if="duplicateIssues.length" class="duplicate-list duplicate-list--studio">
               <li v-for="issue in duplicateIssues" :key="issue.issue_number">
                 <a :href="issue.issue_url" target="_blank" rel="noreferrer">#{{ issue.issue_number }} {{ issue.title }}</a>
@@ -102,6 +137,7 @@
               </select>
               <button class="button button--secondary" type="button" @click="loadSubmittedIssues">搜索</button>
             </div>
+            <div v-if="historyMessage" class="feedback-message feedback-message--subtle">{{ historyMessage }}</div>
             <div class="history-list">
               <article v-for="issue in submittedIssues" :key="issue.issue_number" class="history-card">
                 <div>
@@ -121,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
 import AppShell from '../components/layout/AppShell.vue'
 import {
@@ -139,13 +175,27 @@ const typeLabelMap: Record<string, string> = {
   feature: '新功能',
   enhancement: '优化',
   question: '问题',
+  mixed: '混合',
 }
 
+const feedbackTypeOptions = [
+  { value: 'bug', label: '缺陷', description: '功能异常、报错、结果不符合预期' },
+  { value: 'feature', label: '新功能', description: '希望新增的能力或完整流程' },
+  { value: 'enhancement', label: '优化', description: '体验、性能、文案或交互改进' },
+  { value: 'question', label: '问题', description: '需要确认规则、边界或使用方式' },
+]
+
+const relatedExamples = ['github-submit-flow', 'editor-copy-button', 'login-timeout', 'mobile-navbar']
+const relatedIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
 const submittedIssues = ref<SubmittedIssue[]>([])
+const submittedIssueTotal = ref(0)
 const issuesLoading = ref(false)
 const duplicateIssues = ref<SubmittedIssue[]>([])
 const submitting = ref(false)
 const submitMessage = ref('')
+const historyMessage = ref('')
+let preserveSubmitMessageOnReset = false
 
 const filters = reactive({
   keyword: '',
@@ -153,7 +203,7 @@ const filters = reactive({
 })
 
 const form = reactive<FeedbackCreatePayload>({
-  type: 'bug',
+  type: '',
   related_id: '',
   raw_content: '',
   expected_behavior: '',
@@ -161,20 +211,52 @@ const form = reactive<FeedbackCreatePayload>({
 })
 
 const normalizedRelatedId = computed(() => form.related_id.trim())
+const selectedTypeLabel = computed(() => (form.type ? getTypeLabel(form.type) : ''))
+
+function normalizeRelatedId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function isValidRelatedId(value: string): boolean {
+  return relatedIdPattern.test(value)
+}
 
 function getTypeLabel(type: string): string {
   return typeLabelMap[type] || type
 }
 
+function selectFeedbackType(type: string): void {
+  form.type = type
+  submitMessage.value = ''
+}
+
 async function loadSubmittedIssues(): Promise<void> {
   issuesLoading.value = true
-  const response = await apiGet<PaginatedResponse<SubmittedIssue>>(buildSubmittedIssueSearch(filters))
-  submittedIssues.value = response.success ? response.data.items : []
-  issuesLoading.value = false
+  historyMessage.value = ''
+  try {
+    const response = await apiGet<PaginatedResponse<SubmittedIssue>>(buildSubmittedIssueSearch(filters))
+    if (response.success) {
+      submittedIssues.value = response.data.items
+      submittedIssueTotal.value = response.data.total ?? response.data.items.length
+    } else {
+      submittedIssues.value = []
+      historyMessage.value = response.message || '已提交 Issue 加载失败，请稍后重试。'
+    }
+  } catch {
+    submittedIssues.value = []
+    historyMessage.value = '已提交 Issue 加载失败，请稍后重试。'
+  } finally {
+    issuesLoading.value = false
+  }
 }
 
 async function loadDuplicateIssues(): Promise<void> {
-  if (!normalizedRelatedId.value) {
+  if (!normalizedRelatedId.value || !isValidRelatedId(normalizedRelatedId.value)) {
     duplicateIssues.value = []
     return
   }
@@ -184,9 +266,34 @@ async function loadDuplicateIssues(): Promise<void> {
   duplicateIssues.value = response.success ? response.data.items : []
 }
 
+async function handleRelatedIdBlur(): Promise<void> {
+  form.related_id = normalizeRelatedId(form.related_id)
+  await loadDuplicateIssues()
+}
+
+async function applyRelatedExample(example: string): Promise<void> {
+  form.related_id = normalizeRelatedId(example)
+  await loadDuplicateIssues()
+}
+
 async function submitFeedback(): Promise<void> {
   submitting.value = true
   submitMessage.value = ''
+
+  if (!form.type) {
+    submitMessage.value = '请先选择反馈类型，再提交反馈。'
+    submitting.value = false
+    return
+  }
+
+  form.related_id = normalizeRelatedId(form.related_id)
+
+  if (!isValidRelatedId(form.related_id)) {
+    await nextTick()
+    submitMessage.value = '关联标识请使用小写英文、数字和短横线，例如 github-submit-flow。'
+    submitting.value = false
+    return
+  }
 
   const payload: FeedbackCreatePayload = {
     type: form.type,
@@ -195,29 +302,39 @@ async function submitFeedback(): Promise<void> {
     expected_behavior: form.expected_behavior || undefined,
     actual_behavior: form.actual_behavior || undefined,
   }
-  const response = await apiPost<{ id: string; status: string; created_at: string }, FeedbackCreatePayload>(
-    buildPublicApiPath('/feedback'),
-    payload,
-  )
+  try {
+    const response = await apiPost<{ id: string; status: string; created_at: string }, FeedbackCreatePayload>(
+      buildPublicApiPath('/feedback'),
+      payload,
+    )
 
-  if (response.success) {
-    submitMessage.value = `提交成功，反馈编号 ${response.data.id}`
-    form.type = 'bug'
-    form.related_id = ''
-    form.raw_content = ''
-    form.expected_behavior = ''
-    form.actual_behavior = ''
-    duplicateIssues.value = []
-  } else {
-    submitMessage.value = response.message || '提交失败，请检查输入后重试'
+    if (response.success) {
+      submitMessage.value = `提交成功，反馈编号 ${response.data.id}`
+      preserveSubmitMessageOnReset = true
+      form.type = ''
+      form.related_id = ''
+      form.raw_content = ''
+      form.expected_behavior = ''
+      form.actual_behavior = ''
+      duplicateIssues.value = []
+      await loadSubmittedIssues()
+    } else {
+      submitMessage.value = response.message || '提交失败，请检查输入后重试'
+    }
+  } catch {
+    submitMessage.value = '提交失败，请检查网络后重试。'
+  } finally {
+    submitting.value = false
   }
-
-  submitting.value = false
 }
 
 watch(
   () => form.related_id,
   () => {
+    if (preserveSubmitMessageOnReset) {
+      preserveSubmitMessageOnReset = false
+      return
+    }
     submitMessage.value = ''
   },
 )

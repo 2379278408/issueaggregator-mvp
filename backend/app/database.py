@@ -80,6 +80,28 @@ SCHEMA_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_submissions_related_id ON submissions(related_id)",
     "CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON submissions(submitted_at)",
     "CREATE INDEX IF NOT EXISTS idx_submissions_github_issue_number ON submissions(github_issue_number)",
+    """
+    CREATE TABLE IF NOT EXISTS public_feedback_ip_limits (
+        ip_address TEXT NOT NULL,
+        submit_date TEXT NOT NULL,
+        submission_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (ip_address, submit_date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS audit_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        client_ip TEXT NOT NULL,
+        path TEXT NOT NULL,
+        action TEXT,
+        resource_id TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_audit_events_type_ip_created_at ON audit_events(event_type, client_ip, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at)",
 )
 
 

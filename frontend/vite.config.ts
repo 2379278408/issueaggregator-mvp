@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiBasePath = (env.VITE_API_BASE_PATH || '/api').trim().replace(/\/$/, '') || '/api'
+  const apiProxyTarget = (env.VITE_API_PROXY_TARGET || 'http://localhost:8000').trim()
 
   return {
     plugins: [vue()],
@@ -11,7 +12,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ['.monkeycode-ai.online'],
       proxy: {
         [apiBasePath]: {
-          target: 'http://localhost:3001',
+          target: apiProxyTarget,
           changeOrigin: true,
         },
       },
