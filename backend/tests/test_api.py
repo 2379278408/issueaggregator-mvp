@@ -32,11 +32,13 @@ class ApiTestCase(unittest.TestCase):
             search_submitted_issues,
             update_draft,
         )
-        from app.repositories import SubmissionRepository
+        from app.repositories import DraftIntegrationService, DraftSubmissionService, SubmissionRepository
         from app.routers import feedback as feedback_router_module
 
         initialize_database()
         self.DraftBatchCreatePayload = DraftBatchCreatePayload
+        self.DraftIntegrationService = DraftIntegrationService
+        self.DraftSubmissionService = DraftSubmissionService
         self.DraftUpdatePayload = DraftUpdatePayload
         self.FeedbackCreatePayload = FeedbackCreatePayload
         self.client_ip = _client_ip
@@ -716,6 +718,197 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertFalse(response["success"])
         self.assertEqual(response["error_code"], "DRAFT_CONTENT_REJECTED")
+
+    def test_http_admin_workflow_updates_statuses_and_audit_history(self) -> None:
+        os.environ["GITHUB_TOKEN"] = "test-token"
+        os.environ["GITHUB_REPO_OWNER"] = "org"
+        os.environ["GITHUB_REPO_NAME"] = "repo"
+
+        original_settings = self.feedback_router_module.settings
+        original_submission_service = self.feedback_router_module.draft_submission_service
+        self.feedback_router_module.settings = replace(original_settings, admin_api_token="secret-token")
+
+        submission_service = self.DraftSubmissionService()
+
+        class FakeGitHubClient:
+            def create_issue(self, *, title: str, body: str) -> dict[str, object]:
+                return {
+                    "issue_number": 801,
+                    "issue_url": "https://github.com/org/repo/issues/801",
+                    "response_status": 201,
+                    "github_state": "open",
+                }
+
+        submission_service.github_client = FakeGitHubClient()
+        self.feedback_router_module.draft_submission_service = submission_service
+
+        admin_headers = {"X-Admin-Token": "secret-token"}
+        public_headers = {"Origin": "http://testserver", "Host": "testserver"}
+
+        try:
+            first = self.http_client.post(
+                "/api/feedback",
+                headers=public_headers,
+                json={
+                    "type": "bug",
+                    "related_id": "github-submit-flow",
+                    "raw_content": "first workflow item",
+                    "expected_behavior": "first expected",
+                    "actual_behavior": "first actual",
+                },
+            )
+            second = self.http_client.post(
+                "/api/feedback",
+                headers=public_headers,
+                json={
+                    "type": "bug",
+                    "related_id": "github-submit-flow-second",
+                    "raw_content": "second workflow item",
+                    "expected_behavior": "second expected",
+                    "actual_behavior": "second actual",
+                },
+            )
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+
+            batch_response = self.http_client.post(
+                "/api/admin/workbench/draft-batches",
+                headers=admin_headers,
+                json={
+                    "feedback_item_ids": [first.json()["data"]["id"], second.json()["data"]["id"]],
+                    "confirm_mixed_related_ids": True,
+                },
+            )
+            self.assertEqual(batch_response.status_code, 200)
+            self.assertTrue(batch_response.json()["success"])
+            batch_id = batch_response.json()["data"]["id"]
+
+            integrate_response = self.http_client.post(
+                f"/api/admin/workbench/draft-batches/{batch_id}/integrate",
+                headers=admin_headers,
+                json={},
+            )
+            self.assertEqual(integrate_response.status_code, 200)
+            self.assertTrue(integrate_response.json()["success"])
+            draft_id = integrate_response.json()["data"]["draft_id"]
+
+            update_response = self.http_client.put(
+                f"/api/admin/workbench/drafts/{draft_id}",
+                headers=admin_headers,
+                json={
+                    "title": "[缺陷] github-submit-flow 聚合结果",
+                    "body_markdown": "## 摘要\n整理后的正文\n## 影响\n需要尽快修复",
+                },
+            )
+            self.assertEqual(update_response.status_code, 200)
+            self.assertTrue(update_response.json()["success"])
+
+            submit_response = self.http_client.post(
+                f"/api/admin/workbench/drafts/{draft_id}/submit",
+                headers=admin_headers,
+                json={},
+            )
+            self.assertEqual(submit_response.status_code, 200)
+            self.assertTrue(submit_response.json()["success"])
+            self.assertEqual(submit_response.json()["data"]["issue_number"], 801)
+
+            submitted_queue = self.http_client.get(
+                "/api/admin/workbench/feedback?status=submitted",
+                headers=admin_headers,
+            )
+            submitted_payload = submitted_queue.json()
+            self.assertEqual(submitted_queue.status_code, 200)
+            self.assertEqual(submitted_payload["data"]["total"], 2)
+            self.assertTrue(all(item["batch_id"] == batch_id for item in submitted_payload["data"]["items"]))
+
+            submitted_history = self.http_client.get("/api/issues/submitted/search?keyword=github-submit-flow")
+            history_payload = submitted_history.json()
+            self.assertEqual(submitted_history.status_code, 200)
+            self.assertEqual(history_payload["data"]["total"], 1)
+            self.assertEqual(history_payload["data"]["items"][0]["issue_number"], 801)
+
+            audit_response = self.http_client.get(
+                "/api/admin/workbench/audit-events?event_type=admin_action_succeeded&keyword=submit_draft&page_size=8",
+                headers=admin_headers,
+            )
+            audit_payload = audit_response.json()
+            self.assertEqual(audit_response.status_code, 200)
+            self.assertEqual(audit_payload["data"]["total"], 1)
+            self.assertEqual(audit_payload["data"]["items"][0]["action"], "submit_draft")
+        finally:
+            self.feedback_router_module.settings = original_settings
+            self.feedback_router_module.draft_submission_service = original_submission_service
+            os.environ.pop("GITHUB_TOKEN", None)
+            os.environ.pop("GITHUB_REPO_OWNER", None)
+            os.environ.pop("GITHUB_REPO_NAME", None)
+
+    def test_http_integrate_batch_falls_back_to_template_when_ai_client_fails(self) -> None:
+        os.environ["AI_API_KEY"] = "test-ai-token"
+        os.environ["AI_API_BASE_URL"] = "https://example.test/v1"
+        os.environ["AI_MODEL"] = "test-model"
+
+        from app.repositories import AIIntegrationError
+
+        original_settings = self.feedback_router_module.settings
+        original_integration_service = self.feedback_router_module.draft_integration_service
+        self.feedback_router_module.settings = replace(original_settings, admin_api_token="secret-token")
+
+        integration_service = self.DraftIntegrationService()
+
+        class FailingAIClient:
+            def create_issue_draft(self, *, prompt_snapshot: str, feedback_items: list[object]) -> dict[str, str]:
+                raise AIIntegrationError("AI unavailable")
+
+        integration_service.ai_client = FailingAIClient()
+        self.feedback_router_module.draft_integration_service = integration_service
+
+        admin_headers = {"X-Admin-Token": "secret-token"}
+        public_headers = {"Origin": "http://testserver", "Host": "testserver"}
+
+        try:
+            feedback_response = self.http_client.post(
+                "/api/feedback",
+                headers=public_headers,
+                json={
+                    "type": "bug",
+                    "related_id": "ai-fallback-check",
+                    "raw_content": "fallback item",
+                },
+            )
+            feedback_id = feedback_response.json()["data"]["id"]
+
+            batch_response = self.http_client.post(
+                "/api/admin/workbench/draft-batches",
+                headers=admin_headers,
+                json={
+                    "feedback_item_ids": [feedback_id],
+                    "confirm_mixed_related_ids": False,
+                },
+            )
+            batch_id = batch_response.json()["data"]["id"]
+
+            integrate_response = self.http_client.post(
+                f"/api/admin/workbench/draft-batches/{batch_id}/integrate",
+                headers=admin_headers,
+                json={},
+            )
+            self.assertEqual(integrate_response.status_code, 200)
+            self.assertTrue(integrate_response.json()["success"])
+
+            draft_response = self.http_client.get(
+                f"/api/admin/workbench/drafts/{integrate_response.json()['data']['draft_id']}",
+                headers=admin_headers,
+            )
+            draft_payload = draft_response.json()
+            self.assertEqual(draft_response.status_code, 200)
+            self.assertEqual(draft_payload["data"]["ai_model"], "deterministic-template-v1")
+            self.assertIn("## 待补充信息", draft_payload["data"]["body_markdown"])
+        finally:
+            self.feedback_router_module.settings = original_settings
+            self.feedback_router_module.draft_integration_service = original_integration_service
+            os.environ.pop("AI_API_KEY", None)
+            os.environ.pop("AI_API_BASE_URL", None)
+            os.environ.pop("AI_MODEL", None)
 
     def test_api_responses_include_security_headers(self) -> None:
         response = self.http_client.get("/api/health")

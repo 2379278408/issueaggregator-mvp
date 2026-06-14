@@ -45,3 +45,11 @@
 - Instructions:
   - 公开反馈风控动态回归命令为 `cd backend && python3 tests/e2e_public_feedback_guardrails.py`。
   - 未显式设置 `DATABASE_URL` 时，开发态默认写入 `backend/data/issue_aggregator.dev.db`，避免持续污染已跟踪的运行态数据库文件。
+
+[管理流与提交流 E2E 命令]
+- Date: 2026-06-14
+- Context: Agent 在补管理端批次回归和 GitHub 提交流程脚本时发现
+- Category: 测试方法
+- Instructions:
+  - 管理端建批与审计回归命令为 `cd backend && python3 tests/e2e_admin_batch_flow.py`。
+  - GitHub 提交、历史查询和审计回归命令为 `cd backend && python3 tests/e2e_github_submit_flow.py`。

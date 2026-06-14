@@ -513,6 +513,54 @@ describe('AdminWorkbenchPage', () => {
     expect(routerReplace).toHaveBeenLastCalledWith({ query: { adminQueue: 'grouped', batchId: 'batch_multi' } })
   })
 
+  it('shows batch summary cards and pre-submit checklist for a loaded draft', async () => {
+    routeQuery.adminQueue = 'grouped'
+    routeQuery.batchId = 'batch_1'
+    routeQuery.draftId = 'draft_1'
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_1',
+              draft_id: 'draft_1',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'draft_1',
+          batch_id: 'batch_1',
+          title: '[问题] editor-copy-button',
+          body_markdown: '## 摘要\n内容\n## 影响\n更多内容',
+          related_id_summary: 'editor-copy-button',
+          status: 'draft_ready',
+          updated_at: '2026-06-11T11:10:00Z',
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('批次条目数')
+    expect(wrapper.text()).toContain('关联标识数')
+    expect(wrapper.text()).toContain('提交前确认')
+    expect(wrapper.text()).toContain('标题 23 字')
+    expect(wrapper.text()).toContain('2 个 Markdown 小节')
+  })
+
   it('recovers when batch creation rejects', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })

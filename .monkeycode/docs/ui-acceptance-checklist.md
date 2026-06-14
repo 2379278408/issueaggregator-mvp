@@ -30,11 +30,18 @@
 
 ## 链路回归
 
-- [ ] 从 `pending` 选择反馈并创建批次成功。
-- [ ] 从批次生成草稿成功。
-- [ ] 保存草稿成功，界面反馈正确。
-- [ ] 提交 GitHub 成功后状态更新为已提交。
-- [ ] 切换到 `submitted` 队列可以回看刚提交的记录。
+- [x] 从 `pending` 选择反馈并创建批次成功。
+- [x] 从批次生成草稿成功。
+- [x] 保存草稿成功，界面反馈正确。
+- [x] 提交 GitHub 成功后状态更新为已提交。
+- [x] 切换到 `submitted` 队列可以回看刚提交的记录。
+
+## 自动回归结果
+
+- [x] 前端组件测试覆盖公开页成功态、关联标识复制、历史筛选空状态、管理页草稿提示、审计筛选和批次上下文恢复。
+- [x] 后端单元测试覆盖公开反馈限流、AI 草稿兜底、GitHub 提交流程、审计筛选和 HTTP 管理流整链路。
+- [x] `python3 tests/e2e_admin_batch_flow.py` 已通过，验证管理端建批和审计事件回写。
+- [x] `python3 tests/e2e_github_submit_flow.py` 已通过，验证 GitHub 提交、历史查询和审计记录。
 
 ## 验证命令
 
@@ -44,6 +51,15 @@ cd /workspace/frontend && npm test
 
 # 前端构建
 cd /workspace/frontend && npm run build
+
+# 后端单元测试
+cd /workspace/backend && python3 -m unittest discover -s tests
+
+# 管理流 E2E
+cd /workspace/backend && python3 tests/e2e_admin_batch_flow.py
+
+# GitHub 提交流 E2E
+cd /workspace/backend && python3 tests/e2e_github_submit_flow.py
 
 # 补丁格式检查
 cd /workspace && git diff --check

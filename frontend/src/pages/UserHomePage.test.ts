@@ -35,6 +35,11 @@ describe('UserHomePage', () => {
     apiPost.mockReset()
     buildPublicApiPath.mockClear()
     buildSubmittedIssueSearch.mockClear()
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    })
   })
 
   it('loads submitted issues on mount', async () => {
@@ -326,6 +331,49 @@ describe('UserHomePage', () => {
       raw_content: 'feedback body',
     })
     expect(wrapper.text()).toContain('提交成功，反馈编号 fb_001')
+    expect(wrapper.text()).toContain('最近一次提交')
+    expect(wrapper.text()).toContain('editor-copy-button')
+  })
+
+  it('copies related id and jumps to history after successful submission', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+    apiPost.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'fb_003',
+        status: 'pending',
+        created_at: '2026-06-11T10:00:00Z',
+      },
+    })
+
+    const wrapper = mount(UserHomePage, {
+      global: {
+        stubs: {
+          AppShell: {
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('button[role="radio"]').trigger('click')
+    await wrapper.get('input[placeholder="editor-copy-button"]').setValue('editor-copy-button')
+    await wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').setValue('feedback body')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    const actionButtons = wrapper.findAll('.submission-summary-card button')
+    await actionButtons[0].trigger('click')
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('editor-copy-button')
+    expect(wrapper.text()).toContain('已复制')
+
+    await actionButtons[1].trigger('click')
+    await flushPromises()
+    expect(apiGet).toHaveBeenLastCalledWith('/portal/issues/submitted/search?keyword=editor-copy-button')
   })
 
   it('keeps submission success message when history refresh fails', async () => {

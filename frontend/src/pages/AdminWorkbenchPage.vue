@@ -189,6 +189,21 @@
               <span>{{ draftUpdatedAtLabel }}</span>
             </div>
 
+            <section class="batch-insight-grid" aria-label="批次摘要信息">
+              <article class="batch-insight-card">
+                <span>批次条目数</span>
+                <strong>{{ reviewItems.length }}</strong>
+              </article>
+              <article class="batch-insight-card">
+                <span>关联标识数</span>
+                <strong>{{ activeReviewRelatedIds.length || batchSummary.relatedIdCount || 0 }}</strong>
+              </article>
+              <article class="batch-insight-card">
+                <span>最近保存</span>
+                <strong>{{ draftUpdatedAtLabel }}</strong>
+              </article>
+            </section>
+
             <div class="draft-editor-note">
               <strong>{{ draftEditorHeadline }}</strong>
               <p>{{ draftEditorHint }}</p>
@@ -206,6 +221,15 @@
             </label>
 
             <div v-if="draftMessage" class="feedback-message draft-message">{{ draftMessage }}</div>
+            <section v-if="showDraftSubmissionChecklist" class="submission-readiness-card" aria-label="提交前确认信息">
+              <strong>提交前确认</strong>
+              <p>{{ draftSubmissionChecklistSummary }}</p>
+              <div class="submission-readiness-card__facts">
+                <span>标题 {{ draftTitleLength }} 字</span>
+                <span>正文 {{ draftBodyLength }} 字</span>
+                <span>{{ draftSectionCount }} 个 Markdown 小节</span>
+              </div>
+            </section>
             <div v-if="submissionResult" class="warning-box submission-card submission-card--result">
               <strong>GitHub Issue #{{ submissionResult.issue_number }}</strong>
               <p>
@@ -222,7 +246,7 @@
               <button class="button button--quiet" type="button" :disabled="!currentDraftId || savingDraft" @click="saveDraft">
                 {{ savingDraft ? '保存中...' : '保存草稿' }}
               </button>
-              <button class="button" type="button" :disabled="!currentDraftId || submittingDraft" @click="submitDraftToGithub">
+              <button class="button" type="button" :disabled="!draftCanSubmit || submittingDraft" @click="submitDraftToGithub">
                 {{ submittingDraft ? '提交中...' : '提交 GitHub' }}
               </button>
             </div>
@@ -633,6 +657,25 @@ const draftEditorHint = computed(() => {
   }
   return '保持标题简短，正文按章节展开，保存后再提交到 GitHub。'
 })
+
+const draftTitleLength = computed(() => draftForm.title.trim().length)
+const draftBodyLength = computed(() => draftForm.body_markdown.trim().length)
+const draftSectionCount = computed(() => {
+  const matches = draftForm.body_markdown.match(/^##\s+/gm)
+  return matches?.length || 0
+})
+
+const showDraftSubmissionChecklist = computed(() => Boolean(currentDraftId.value) && !submissionResult.value)
+
+const draftSubmissionChecklistSummary = computed(() => {
+  if (!currentDraftId.value) {
+    return '生成草稿后，这里会显示提交前需要确认的关键信息。'
+  }
+
+  return `当前草稿关联 ${draftRelatedIdSummary.value}，覆盖 ${reviewItems.value.length} 条反馈。保存后可直接提交到 GitHub。`
+})
+
+const draftCanSubmit = computed(() => Boolean(currentDraftId.value) && Boolean(draftForm.title.trim()) && Boolean(draftForm.body_markdown.trim()))
 
 const queueHeading = computed(() => statusLabelMap[queueStatus.value])
 

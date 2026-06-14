@@ -114,6 +114,24 @@
             </div>
 
             <div v-if="submitMessage" class="feedback-message field--full">{{ submitMessage }}</div>
+            <section v-if="lastSubmission" class="submission-summary-card" aria-label="最近一次提交摘要">
+              <div>
+                <span class="submission-summary-card__eyebrow">最近一次提交</span>
+                <strong>{{ lastSubmission.related_id }}</strong>
+                <p>
+                  {{ lastSubmission.typeLabel }}反馈已进入待整理队列，反馈编号 {{ lastSubmission.id }}。
+                  <span v-if="lastSubmission.created_at">提交时间 {{ lastSubmission.created_at }}</span>
+                </p>
+              </div>
+              <div class="submission-summary-card__actions">
+                <button class="button button--quiet button--compact" type="button" @click="copyRelatedId">
+                  {{ copyStateLabel }}
+                </button>
+                <button class="button button--secondary button--compact" type="button" @click="viewRelatedHistory">
+                  查看同标识历史
+                </button>
+              </div>
+            </section>
             <div class="composer-actions">
               <span>{{ normalizedRelatedId || '等待关联标识' }}</span>
               <button class="button" type="submit">{{ submitting ? '提交中...' : '提交反馈' }}</button>
@@ -207,6 +225,8 @@ const duplicateIssues = ref<SubmittedIssue[]>([])
 const submitting = ref(false)
 const submitMessage = ref('')
 const historyMessage = ref('')
+const lastSubmission = ref<{ id: string; related_id: string; typeLabel: string; created_at: string } | null>(null)
+const copyStateLabel = ref('复制关联标识')
 let preserveSubmitMessageOnReset = false
 
 const filters = reactive({
@@ -319,9 +339,33 @@ async function applyRelatedExample(example: string): Promise<void> {
   await loadDuplicateIssues()
 }
 
+async function copyRelatedId(): Promise<void> {
+  if (!lastSubmission.value) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(lastSubmission.value.related_id)
+    copyStateLabel.value = '已复制'
+  } catch {
+    copyStateLabel.value = '当前环境不支持复制'
+  }
+}
+
+async function viewRelatedHistory(): Promise<void> {
+  if (!lastSubmission.value) {
+    return
+  }
+
+  filters.keyword = lastSubmission.value.related_id
+  filters.type = 'all'
+  await loadSubmittedIssues()
+}
+
 async function submitFeedback(): Promise<void> {
   submitting.value = true
   submitMessage.value = ''
+  copyStateLabel.value = '复制关联标识'
 
   if (!form.type) {
     submitMessage.value = '请先选择反馈类型，再提交反馈。'
@@ -353,6 +397,12 @@ async function submitFeedback(): Promise<void> {
 
     if (response.success) {
       submitMessage.value = `提交成功，反馈编号 ${response.data.id}`
+      lastSubmission.value = {
+        id: response.data.id,
+        related_id: form.related_id,
+        typeLabel: getTypeLabel(form.type),
+        created_at: response.data.created_at,
+      }
       preserveSubmitMessageOnReset = true
       form.type = ''
       form.related_id = ''
