@@ -416,6 +416,30 @@
   margin-bottom: 14px;
 }
 
+.history-summary,
+.draft-editor-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(17, 24, 20, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.history-summary strong,
+.draft-editor-note strong {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.history-summary span,
+.draft-editor-note p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .audit-filter-chip {
   border: 1px solid rgba(17, 24, 20, 0.1);
   border-radius: 999px;
@@ -554,6 +578,7 @@
 .issue-title-field,
 .issue-body-field {
   margin-bottom: 12px;
+  gap: 6px;
 }
 
 .issue-actions {
@@ -1881,6 +1906,8 @@
 
 .textarea--editor {
   min-height: 380px;
+  padding: 14px 15px;
+  font-size: 14px;
   line-height: 1.7;
 }
 
@@ -2326,6 +2353,11 @@
   .feedback-type-card {
     min-height: 84px;
     padding: 11px;
+  }
+
+  .history-summary,
+  .draft-editor-note {
+    padding: 12px;
   }
 
   .composer-main-field textarea,

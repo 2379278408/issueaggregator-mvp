@@ -9,7 +9,14 @@ const { apiGet, apiPost, buildPublicApiPath, buildSubmittedIssueSearch } = vi.ho
     if (params.related_id) {
       return `/portal/issues/submitted/search?related_id=${params.related_id}`
     }
-    return '/portal/issues/submitted'
+    const query = new URLSearchParams()
+    if (params.keyword?.trim()) {
+      query.set('keyword', params.keyword.trim())
+    }
+    if (params.type && params.type !== 'all') {
+      query.set('type', params.type)
+    }
+    return query.size ? `/portal/issues/submitted/search?${query.toString()}` : '/portal/issues/submitted'
   }),
 }))
 
@@ -82,6 +89,33 @@ describe('UserHomePage', () => {
 
     expect(wrapper.text()).toContain('已提交 Issue 加载失败')
     expect(wrapper.text()).not.toContain('加载中')
+  })
+
+  it('shows empty search guidance when filtered history has no result', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 3 } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+
+    const wrapper = mount(UserHomePage, {
+      global: {
+        stubs: {
+          AppShell: {
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('input[placeholder="搜索标识或关键词"]').setValue('toolbar')
+    await wrapper.get('select').setValue('bug')
+    await wrapper.get('button.button--quiet').trigger('click')
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenLastCalledWith('/portal/issues/submitted/search?keyword=toolbar&type=bug')
+    expect(wrapper.text()).toContain('当前结果 0 条')
+    expect(wrapper.text()).toContain('已按 关键词 toolbar / 类型 缺陷 筛选')
+    expect(wrapper.text()).toContain('没有匹配结果')
   })
 
   it('keeps the last submitted issue total when a later refresh fails', async () => {

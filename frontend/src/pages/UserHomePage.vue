@@ -128,6 +128,7 @@
                 <span>History</span>
                 <h3>历史记录</h3>
               </div>
+              <p>{{ historySectionHint }}</p>
             </div>
             <div class="history-search">
               <input v-model="filters.keyword" class="input" placeholder="搜索标识或关键词" />
@@ -140,6 +141,10 @@
               </select>
               <button class="button button--quiet" type="button" @click="loadSubmittedIssues">搜索</button>
             </div>
+            <div class="history-summary">
+              <strong>{{ historySummaryTitle }}</strong>
+              <span>{{ historySummaryHint }}</span>
+            </div>
             <div v-if="historyMessage" class="feedback-message feedback-message--subtle">{{ historyMessage }}</div>
             <div class="history-list">
               <article v-for="issue in submittedIssues" :key="issue.issue_number" class="history-card">
@@ -151,8 +156,8 @@
                 <span class="history-card__related">{{ issue.related_id }}</span>
               </article>
               <div v-if="!submittedIssues.length && !issuesLoading" class="empty-state">
-                <strong class="empty-state__title">暂无历史记录</strong>
-                <span class="empty-state__hint">搜索结果会在这里展示，便于确认同类问题是否已经进入 GitHub。</span>
+                <strong class="empty-state__title">{{ historyEmptyTitle }}</strong>
+                <span class="empty-state__hint">{{ historyEmptyHint }}</span>
               </div>
               <div v-if="issuesLoading" class="empty-state empty-state--loading">正在加载...</div>
             </div>
@@ -219,6 +224,37 @@ const form = reactive<FeedbackCreatePayload>({
 
 const normalizedRelatedId = computed(() => form.related_id.trim())
 const selectedTypeLabel = computed(() => (form.type ? getTypeLabel(form.type) : ''))
+const hasHistoryFilters = computed(() => Boolean(filters.keyword.trim()) || filters.type !== 'all')
+const historySectionHint = computed(() => (hasHistoryFilters.value ? '按关键词或类型缩小结果范围。' : '查看最近聚合后的 GitHub Issue。'))
+const historySummaryTitle = computed(() => {
+  if (issuesLoading.value) {
+    return '正在刷新历史记录'
+  }
+  if (hasHistoryFilters.value) {
+    return `当前结果 ${submittedIssues.value.length} 条`
+  }
+  return `最近记录 ${submittedIssues.value.length} 条`
+})
+const historySummaryHint = computed(() => {
+  if (hasHistoryFilters.value) {
+    const parts = []
+    if (filters.keyword.trim()) {
+      parts.push(`关键词 ${filters.keyword.trim()}`)
+    }
+    if (filters.type !== 'all') {
+      parts.push(`类型 ${getTypeLabel(filters.type)}`)
+    }
+    return parts.length ? `已按 ${parts.join(' / ')} 筛选` : '已应用筛选'
+  }
+  return `累计已提交 ${submittedIssueTotal.value} 条 Issue`
+})
+const historyEmptyTitle = computed(() => (hasHistoryFilters.value ? '没有匹配结果' : '暂无历史记录'))
+const historyEmptyHint = computed(() => {
+  if (hasHistoryFilters.value) {
+    return '调整关键词或类型后重新搜索，或者查看全部历史记录。'
+  }
+  return '搜索结果会在这里展示，便于确认同类问题是否已经进入 GitHub。'
+})
 
 function normalizeRelatedId(value: string): string {
   return value

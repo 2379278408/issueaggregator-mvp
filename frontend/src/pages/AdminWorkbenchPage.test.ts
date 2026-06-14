@@ -454,6 +454,7 @@ describe('AdminWorkbenchPage', () => {
     expect(wrapper.find('textarea').element.value).toContain('Summary')
     expect(wrapper.text()).toContain('Issue Draft')
     expect(wrapper.text()).toContain('待提交')
+    expect(wrapper.text()).toContain('当前草稿可直接继续完善')
   }, 10000)
 
   it('keeps grouped batch context after creating a multi-feedback batch', async () => {

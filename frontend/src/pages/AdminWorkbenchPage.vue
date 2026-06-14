@@ -189,12 +189,19 @@
               <span>{{ draftUpdatedAtLabel }}</span>
             </div>
 
+            <div class="draft-editor-note">
+              <strong>{{ draftEditorHeadline }}</strong>
+              <p>{{ draftEditorHint }}</p>
+            </div>
+
             <label class="field field--full issue-title-field">
               <span>Issue 标题</span>
+              <small class="field-helper">标题保持聚焦，优先写清问题对象和结果。</small>
               <input v-model="draftForm.title" class="input" :readonly="!currentDraftId" />
             </label>
             <label class="field field--full issue-body-field">
               <span>Issue 正文</span>
+              <small class="field-helper">正文按摘要、背景、期望、实际和影响展开，便于直接提交到 GitHub。</small>
               <textarea v-model="draftForm.body_markdown" class="textarea textarea--editor" rows="18" :readonly="!currentDraftId"></textarea>
             </label>
 
@@ -599,6 +606,32 @@ const draftUpdatedAtLabel = computed(() => {
     return currentDraftRecord.value.updated_at
   }
   return '尚未生成'
+})
+
+const draftEditorHeadline = computed(() => {
+  if (submissionResult.value) {
+    return 'GitHub 提交已完成'
+  }
+  if (!activeBatchId.value) {
+    return '等待进入草稿阶段'
+  }
+  if (!currentDraftId.value) {
+    return '先生成草稿，再进入编辑'
+  }
+  return '当前草稿可直接继续完善'
+})
+
+const draftEditorHint = computed(() => {
+  if (submissionResult.value) {
+    return '当前版本已经提交成功，可以继续回看正文结构或切换到其他批次。'
+  }
+  if (!activeBatchId.value) {
+    return '左侧完成建批后，这里会出现标题、正文和提交动作。'
+  }
+  if (!currentDraftId.value) {
+    return '生成后的草稿会自动带入批次上下文，便于你继续整理 Markdown 内容。'
+  }
+  return '保持标题简短，正文按章节展开，保存后再提交到 GitHub。'
 })
 
 const queueHeading = computed(() => statusLabelMap[queueStatus.value])
