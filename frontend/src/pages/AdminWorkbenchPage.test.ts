@@ -364,7 +364,7 @@ describe('AdminWorkbenchPage', () => {
 
     expect(wrapper.text()).toContain('管理数据加载失败')
     expect(wrapper.text()).not.toContain('one')
-    expect(wrapper.text()).toContain('暂无内容。')
+    expect(wrapper.text()).toContain('当前队列为空')
     expect(wrapper.text()).toContain('batch_1')
     expect(findButtonByText(wrapper, '生成草稿')!.attributes('disabled')).toBeUndefined()
   })
@@ -456,6 +456,62 @@ describe('AdminWorkbenchPage', () => {
     expect(wrapper.text()).toContain('待提交')
   }, 10000)
 
+  it('keeps grouped batch context after creating a multi-feedback batch', async () => {
+    apiGet
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' },
+            { id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'pending', created_at: 'now' },
+            { id: 'fb_3', type: 'bug', related_id: 'editor-copy-button', raw_content: 'three', status: 'pending', created_at: 'now' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'grouped', created_at: 'now', batch_id: 'batch_multi' },
+            { id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'grouped', created_at: 'now', batch_id: 'batch_multi' },
+            { id: 'fb_3', type: 'bug', related_id: 'editor-copy-button', raw_content: 'three', status: 'grouped', created_at: 'now', batch_id: 'batch_multi' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+    apiPost.mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 'batch_multi',
+        status: 'created',
+        primary_related_id: 'editor-copy-button',
+        related_id_count: 1,
+        created_at: '2026-06-11T11:00:00Z',
+      },
+    })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await checkboxes[2].setValue(true)
+    await findButtonByText(wrapper, '创建批次')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前批次反馈')
+    expect(wrapper.text()).toContain('当前批次共包含 3 条反馈')
+    expect(wrapper.text()).toContain('one')
+    expect(wrapper.text()).toContain('two')
+    expect(wrapper.text()).toContain('three')
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { adminQueue: 'grouped', batchId: 'batch_multi' } })
+  })
+
   it('recovers when batch creation rejects', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
@@ -496,7 +552,7 @@ describe('AdminWorkbenchPage', () => {
 
     expect(wrapper.text()).toContain('已选 2 / 2')
     expect(wrapper.findAll('input[type="checkbox"]').every((checkbox) => (checkbox.element as HTMLInputElement).checked)).toBe(true)
-  })
+  }, 10000)
 
   it('resumes a failed grouped batch and regenerates a draft', async () => {
     apiGet
@@ -696,7 +752,7 @@ describe('AdminWorkbenchPage', () => {
     await wrapper.findAll('button').find((button) => button.text().includes('toolbar-shortcuts'))!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('当前参考记录')
+    expect(wrapper.text()).toContain('当前批次反馈')
     expect(findButtonByText(wrapper, '生成草稿')!.attributes('disabled')).toBeDefined()
     expect(findButtonByText(wrapper, '提交 GitHub')!.attributes('disabled')).toBeDefined()
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('用户信号数量')

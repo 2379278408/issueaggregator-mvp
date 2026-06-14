@@ -13,6 +13,7 @@
         <div class="intake-hero__metrics">
           <span>已提交 Issue</span>
           <strong>{{ submittedIssueTotal }}</strong>
+          <small>公开反馈会自动聚合成可追踪的 GitHub Issue。</small>
         </div>
       </header>
 
@@ -60,22 +61,40 @@
               </label>
             </div>
 
-            <div class="related-id-guide" aria-label="关联标识填写示例">
-              <div>
-                <strong>怎么填关联标识</strong>
-                <p>按页面、组件、接口或业务流程命名，使用小写英文、数字和短横线。</p>
+            <div class="composer-support-row">
+              <div class="related-id-guide" aria-label="关联标识填写示例">
+                <div>
+                  <strong>怎么填关联标识</strong>
+                  <p>按页面、组件、接口或业务流程命名，使用小写英文、数字和短横线。</p>
+                </div>
+                <div class="related-id-examples">
+                  <button
+                    v-for="example in relatedExamples"
+                    :key="example"
+                    class="related-id-chip"
+                    type="button"
+                    @click="applyRelatedExample(example)"
+                  >
+                    {{ example }}
+                  </button>
+                </div>
               </div>
-              <div class="related-id-examples">
-                <button
-                  v-for="example in relatedExamples"
-                  :key="example"
-                  class="related-id-chip"
-                  type="button"
-                  @click="applyRelatedExample(example)"
-                >
-                  {{ example }}
-                </button>
-              </div>
+
+              <section class="duplicate-panel duplicate-panel--inline">
+                <div class="studio-section-head studio-section-head--compact">
+                  <div>
+                    <span>Duplicate</span>
+                    <h3>{{ duplicateIssues.length ? '发现同主题' : '查重' }}</h3>
+                  </div>
+                </div>
+                <p v-if="duplicateIssues.length">已有 {{ duplicateIssues.length }} 条相关记录。</p>
+                <p v-else>输入关联标识后显示同主题 Issue，提交前可快速判断是否已经有人反馈。</p>
+                <ul v-if="duplicateIssues.length" class="duplicate-list duplicate-list--studio">
+                  <li v-for="issue in duplicateIssues" :key="issue.issue_number">
+                    <a :href="issue.issue_url" target="_blank" rel="noreferrer">#{{ issue.issue_number }} {{ issue.title }}</a>
+                  </li>
+                </ul>
+              </section>
             </div>
 
             <label class="field field--full composer-main-field">
@@ -102,23 +121,7 @@
           </form>
         </article>
 
-        <aside class="intake-inspector">
-          <section class="duplicate-panel">
-            <div class="studio-section-head">
-              <div>
-              <span>Duplicate</span>
-              <h3>{{ duplicateIssues.length ? '发现同主题' : '查重' }}</h3>
-              </div>
-            </div>
-            <p v-if="duplicateIssues.length">已有 {{ duplicateIssues.length }} 条相关记录。</p>
-            <p v-else>输入关联标识后显示同主题 Issue，提交前可判断是否已经有人反馈。</p>
-            <ul v-if="duplicateIssues.length" class="duplicate-list duplicate-list--studio">
-              <li v-for="issue in duplicateIssues" :key="issue.issue_number">
-                <a :href="issue.issue_url" target="_blank" rel="noreferrer">#{{ issue.issue_number }} {{ issue.title }}</a>
-              </li>
-            </ul>
-          </section>
-
+          <aside class="intake-inspector">
           <section class="history-panel">
             <div class="studio-section-head">
               <div>
@@ -135,19 +138,23 @@
                 <option value="enhancement">优化</option>
                 <option value="question">问题</option>
               </select>
-              <button class="button button--secondary" type="button" @click="loadSubmittedIssues">搜索</button>
+              <button class="button button--quiet" type="button" @click="loadSubmittedIssues">搜索</button>
             </div>
             <div v-if="historyMessage" class="feedback-message feedback-message--subtle">{{ historyMessage }}</div>
             <div class="history-list">
               <article v-for="issue in submittedIssues" :key="issue.issue_number" class="history-card">
-                <div>
-                  <span>{{ getTypeLabel(issue.type) }} · #{{ issue.issue_number }}</span>
-                  <strong>{{ issue.related_id }}</strong>
+                <div class="history-card__meta">
+                  <span class="history-card__type">{{ getTypeLabel(issue.type) }}</span>
+                  <strong class="history-card__number">#{{ issue.issue_number }}</strong>
                 </div>
                 <a :href="issue.issue_url" target="_blank" rel="noreferrer">{{ issue.title }}</a>
+                <span class="history-card__related">{{ issue.related_id }}</span>
               </article>
-              <div v-if="!submittedIssues.length && !issuesLoading" class="empty-state">暂无历史记录。</div>
-              <div v-if="issuesLoading" class="empty-state">正在加载...</div>
+              <div v-if="!submittedIssues.length && !issuesLoading" class="empty-state">
+                <strong class="empty-state__title">暂无历史记录</strong>
+                <span class="empty-state__hint">搜索结果会在这里展示，便于确认同类问题是否已经进入 GitHub。</span>
+              </div>
+              <div v-if="issuesLoading" class="empty-state empty-state--loading">正在加载...</div>
             </div>
           </section>
         </aside>

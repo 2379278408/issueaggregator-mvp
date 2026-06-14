@@ -52,8 +52,13 @@
             <p>{{ queueDescription }}</p>
           </header>
 
+          <div class="queue-overview">
+            <strong>{{ statusCounts[queueStatus] }}</strong>
+            <span>{{ queueStatus === 'pending' ? '等待进入本轮整理的反馈' : queueStatus === 'grouped' ? '已进入批次、可继续整理的反馈' : '已经完成提交的反馈记录' }}</span>
+          </div>
+
           <div v-if="queueStatus === 'pending' && queueItems.length" class="signal-actions">
-            <button class="button button--secondary button--compact" type="button" @click="toggleCurrentPendingSelection">
+            <button class="button button--quiet button--compact" type="button" @click="toggleCurrentPendingSelection">
               {{ allPendingSelected ? '取消全选' : '一键勾选' }}
             </button>
             <span>已选 {{ selectedIds.length }} / {{ queueItems.length }}</span>
@@ -91,195 +96,209 @@
                 <p>{{ excerpt(item.raw_content, 92) }}</p>
               </button>
             </section>
-            <div v-if="!queueItems.length && !loading" class="empty-state">暂无内容。</div>
-            <div v-if="loading" class="empty-state">正在载入...</div>
+            <div v-if="!queueItems.length && !loading" class="empty-state">
+              <strong class="empty-state__title">当前队列为空</strong>
+              <span class="empty-state__hint">切换到其他状态，或等待新的反馈进入这个阶段。</span>
+            </div>
+            <div v-if="loading" class="empty-state empty-state--loading">正在载入...</div>
           </div>
         </article>
 
-        <article id="review-panel" class="topic-canvas">
-          <header class="studio-section-head">
-            <div>
-              <span>Topic Canvas</span>
-              <h3>{{ reviewHeadline }}</h3>
-            </div>
-            <p>{{ reviewDescription }}</p>
-          </header>
-
-          <section class="topic-summary" :class="reviewDecisionToneClass">
-            <span>判断</span>
-            <strong>{{ reviewDecisionTitle }}</strong>
-            <p>{{ reviewDecisionDescription }}</p>
-          </section>
-
-          <div class="topic-facts">
-            <article>
-              <span>主题</span>
-              <strong>{{ batchSummary.primaryRelatedId || activeReferenceRelatedId || '待选择' }}</strong>
-            </article>
-            <article>
-              <span>信号</span>
-              <strong>{{ reviewItems.length }}</strong>
-            </article>
-            <article>
-              <span>缺失</span>
-              <strong>{{ reviewMissingCount }}</strong>
-            </article>
-          </div>
-
-          <div class="evidence-list">
-            <article v-for="item in reviewItems" :key="item.id" class="evidence-card">
-              <div class="evidence-card__meta">
-                <span>{{ getTypeLabel(item.type) }}</span>
-                <strong>{{ item.related_id }}</strong>
-                <span>{{ getMissingFieldCount(item) ? `缺失 ${getMissingFieldCount(item)} 项` : '信息完整' }}</span>
+        <div class="triage-workbench">
+          <article id="review-panel" class="topic-canvas">
+            <header class="studio-section-head">
+              <div>
+                <span>Topic Canvas</span>
+                <h3>{{ reviewHeadline }}</h3>
               </div>
-              <p>{{ item.raw_content }}</p>
-              <dl>
-                <div>
-                  <dt>期望</dt>
-                  <dd>{{ item.expected_behavior || '待补充' }}</dd>
-                </div>
-                <div>
-                  <dt>实际</dt>
-                  <dd>{{ item.actual_behavior || '待补充' }}</dd>
-                </div>
-              </dl>
-            </article>
-            <div v-if="!reviewItems.length" class="empty-state">选择反馈后生成主题画布。</div>
-          </div>
+              <p>{{ reviewDescription }}</p>
+            </header>
 
-          <div v-if="batchMessage" class="feedback-message">{{ batchMessage }}</div>
-          <div class="studio-actions">
-            <button class="button button--secondary" type="button" :disabled="queueStatus !== 'pending' || creatingBatch" @click="createBatch">
-              {{ creatingBatch ? '创建中...' : batchSummary.isMixed ? '确认建批' : '创建批次' }}
-            </button>
-            <button class="button" type="button" :disabled="!activeBatchId || integratingDraft" @click="integrateDraft">
-              {{ integratingDraft ? '生成中...' : '生成草稿' }}
-            </button>
-          </div>
-        </article>
+            <section class="topic-summary" :class="reviewDecisionToneClass">
+              <span>判断</span>
+              <strong>{{ reviewDecisionTitle }}</strong>
+              <p>{{ reviewDecisionDescription }}</p>
+            </section>
 
-        <article id="draft-panel" class="issue-editor">
-          <header class="studio-section-head">
-            <div>
-              <span>Issue Draft</span>
-              <h3>{{ draftStatusLabel }}</h3>
+            <div class="topic-facts">
+              <article>
+                <span>主题</span>
+                <strong>{{ batchSummary.primaryRelatedId || activeReferenceRelatedId || '待选择' }}</strong>
+              </article>
+              <article>
+                <span>信号</span>
+                <strong>{{ reviewItems.length }}</strong>
+              </article>
+              <article>
+                <span>缺失</span>
+                <strong>{{ reviewMissingCount }}</strong>
+              </article>
             </div>
-            <p>{{ draftStatusDescription }}</p>
-          </header>
 
-          <div class="issue-editor__meta">
-            <span>{{ draftRelatedIdSummary }}</span>
-            <span>{{ activeBatchId || '待建批' }}</span>
-            <span>{{ draftUpdatedAtLabel }}</span>
-          </div>
-
-          <label class="field field--full issue-title-field">
-            <span>Issue 标题</span>
-            <input v-model="draftForm.title" class="input" :readonly="!currentDraftId" />
-          </label>
-          <label class="field field--full issue-body-field">
-            <span>Issue 正文</span>
-            <textarea v-model="draftForm.body_markdown" class="textarea textarea--editor" rows="18" :readonly="!currentDraftId"></textarea>
-          </label>
-
-          <div v-if="draftMessage" class="feedback-message draft-message">{{ draftMessage }}</div>
-          <div v-if="submissionResult" class="warning-box submission-card submission-card--result">
-            <strong>GitHub Issue #{{ submissionResult.issue_number }}</strong>
-            <p>
-              已提交到
-              <a :href="submissionResult.issue_url" target="_blank" rel="noreferrer">GitHub</a>
-              ，时间 {{ submissionResult.submitted_at }}
-            </p>
-          </div>
-
-          <div class="studio-actions issue-actions">
-            <button class="button button--secondary" type="button" :disabled="!activeBatchId || integratingDraft" @click="integrateDraft">
-              {{ integratingDraft ? '生成中...' : '生成草稿' }}
-            </button>
-            <button class="button button--secondary" type="button" :disabled="!currentDraftId || savingDraft" @click="saveDraft">
-              {{ savingDraft ? '保存中...' : '保存草稿' }}
-            </button>
-            <button class="button" type="button" :disabled="!currentDraftId || submittingDraft" @click="submitDraftToGithub">
-              {{ submittingDraft ? '提交中...' : '提交 GitHub' }}
-            </button>
-          </div>
-        </article>
-      </section>
-
-      <section class="audit-stream">
-        <header class="studio-section-head">
-          <div>
-            <span>Security Events</span>
-            <h3>最近审计事件</h3>
-          </div>
-          <p>查看最近的管理员鉴权失败和成功操作，便于快速回看安全链路。</p>
-        </header>
-
-        <div class="audit-stream__meta">
-          <span>最近 {{ auditEvents.length }} 条</span>
-          <button class="button button--secondary button--compact" type="button" :disabled="loadingAuditEvents" @click="loadAuditEvents">
-            {{ loadingAuditEvents ? '刷新中...' : '刷新事件' }}
-          </button>
-        </div>
-
-        <div class="audit-filters">
-          <button
-            v-for="option in auditFilterOptions"
-            :key="option.value"
-            class="audit-filter-chip"
-            :class="{ 'is-active': activeAuditFilter === option.value }"
-            type="button"
-            :disabled="loadingAuditEvents"
-            @click="applyAuditFilter(option.value)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-
-        <div class="audit-filters audit-filters--time">
-          <button
-            v-for="option in auditTimeRangeOptions"
-            :key="option.value"
-            class="audit-filter-chip"
-            :class="{ 'is-active': activeAuditTimeRange === option.value }"
-            type="button"
-            :disabled="loadingAuditEvents"
-            @click="applyAuditTimeRange(option.value)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-
-        <div class="audit-search">
-          <input
-            v-model="auditKeywordInput"
-            class="input"
-            type="text"
-            placeholder="按 IP、路径、动作或资源检索"
-            :disabled="loadingAuditEvents"
-            @keydown.enter.prevent="applyAuditKeyword"
-          />
-          <button class="button button--secondary button--compact" type="button" :disabled="loadingAuditEvents" @click="applyAuditKeyword">
-            检索
-          </button>
-        </div>
-
-        <div v-if="auditMessage" class="feedback-message feedback-message--subtle">{{ auditMessage }}</div>
-        <div class="audit-list">
-          <article v-for="event in auditEvents" :key="event.id" class="audit-card">
-            <div class="audit-card__meta">
-              <strong>{{ getAuditEventLabel(event) }}</strong>
-              <span>{{ describeAuditEventTime(event.created_at) }}</span>
+            <div class="evidence-list">
+              <article v-for="item in reviewItems" :key="item.id" class="evidence-card">
+                <div class="evidence-card__meta">
+                  <span>{{ getTypeLabel(item.type) }}</span>
+                  <strong>{{ item.related_id }}</strong>
+                  <span>{{ getMissingFieldCount(item) ? `缺失 ${getMissingFieldCount(item)} 项` : '信息完整' }}</span>
+                </div>
+                <section class="evidence-card__summary">
+                  <span>反馈摘要</span>
+                  <p>{{ item.raw_content }}</p>
+                </section>
+                <dl class="evidence-card__compare">
+                  <div class="evidence-card__compare-block">
+                    <dt>期望</dt>
+                    <dd>{{ item.expected_behavior || '待补充' }}</dd>
+                  </div>
+                  <div class="evidence-card__compare-block">
+                    <dt>实际</dt>
+                    <dd>{{ item.actual_behavior || '待补充' }}</dd>
+                  </div>
+                </dl>
+              </article>
+              <div v-if="!reviewItems.length" class="empty-state">
+                <strong class="empty-state__title">等待生成主题画布</strong>
+                <span class="empty-state__hint">先在左侧选择反馈，这里会汇总主题、缺失信息和聚合判断。</span>
+              </div>
             </div>
-            <p>{{ describeAuditEvent(event) }}</p>
-            <div class="audit-card__tags">
-              <span>{{ event.client_ip }}</span>
-              <span>{{ event.path }}</span>
-              <span v-if="event.resource_id">{{ event.resource_id }}</span>
+
+            <div v-if="batchMessage" class="feedback-message">{{ batchMessage }}</div>
+            <div class="studio-actions">
+              <button class="button button--secondary" type="button" :disabled="queueStatus !== 'pending' || creatingBatch" @click="createBatch">
+                {{ creatingBatch ? '创建中...' : batchSummary.isMixed ? '确认建批' : '创建批次' }}
+              </button>
+              <button class="button" type="button" :disabled="!activeBatchId || integratingDraft" @click="integrateDraft">
+                {{ integratingDraft ? '生成中...' : '生成草稿' }}
+              </button>
             </div>
           </article>
-          <div v-if="!auditEvents.length && !loadingAuditEvents" class="empty-state">暂无审计事件。</div>
+
+          <article id="draft-panel" class="issue-editor">
+            <header class="studio-section-head">
+              <div>
+                <span>Issue Draft</span>
+                <h3>{{ draftStatusLabel }}</h3>
+              </div>
+              <p>{{ draftStatusDescription }}</p>
+            </header>
+
+            <div class="issue-editor__meta issue-editor__meta--badges">
+              <span>{{ draftRelatedIdSummary }}</span>
+              <span>{{ activeBatchId || '待建批' }}</span>
+              <span>{{ draftUpdatedAtLabel }}</span>
+            </div>
+
+            <label class="field field--full issue-title-field">
+              <span>Issue 标题</span>
+              <input v-model="draftForm.title" class="input" :readonly="!currentDraftId" />
+            </label>
+            <label class="field field--full issue-body-field">
+              <span>Issue 正文</span>
+              <textarea v-model="draftForm.body_markdown" class="textarea textarea--editor" rows="18" :readonly="!currentDraftId"></textarea>
+            </label>
+
+            <div v-if="draftMessage" class="feedback-message draft-message">{{ draftMessage }}</div>
+            <div v-if="submissionResult" class="warning-box submission-card submission-card--result">
+              <strong>GitHub Issue #{{ submissionResult.issue_number }}</strong>
+              <p>
+                已提交到
+                <a :href="submissionResult.issue_url" target="_blank" rel="noreferrer">GitHub</a>
+                ，时间 {{ submissionResult.submitted_at }}
+              </p>
+            </div>
+
+            <div class="studio-actions issue-actions issue-actions--dock">
+              <button class="button button--secondary" type="button" :disabled="!activeBatchId || integratingDraft" @click="integrateDraft">
+                {{ integratingDraft ? '生成中...' : '生成草稿' }}
+              </button>
+              <button class="button button--quiet" type="button" :disabled="!currentDraftId || savingDraft" @click="saveDraft">
+                {{ savingDraft ? '保存中...' : '保存草稿' }}
+              </button>
+              <button class="button" type="button" :disabled="!currentDraftId || submittingDraft" @click="submitDraftToGithub">
+                {{ submittingDraft ? '提交中...' : '提交 GitHub' }}
+              </button>
+            </div>
+          </article>
+
+          <section class="audit-stream audit-stream--secondary">
+            <header class="studio-section-head">
+              <div>
+                <span>Security Events</span>
+                <h3>最近审计事件</h3>
+              </div>
+              <p>查看最近的管理员鉴权失败和成功操作，便于快速回看安全链路。</p>
+            </header>
+
+            <div class="audit-stream__meta">
+              <span>最近 {{ auditEvents.length }} 条</span>
+              <button class="button button--quiet button--compact" type="button" :disabled="loadingAuditEvents" @click="loadAuditEvents">
+                {{ loadingAuditEvents ? '刷新中...' : '刷新事件' }}
+              </button>
+            </div>
+
+            <div class="audit-filters">
+              <button
+                v-for="option in auditFilterOptions"
+                :key="option.value"
+                class="audit-filter-chip"
+                :class="{ 'is-active': activeAuditFilter === option.value }"
+                type="button"
+                :disabled="loadingAuditEvents"
+                @click="applyAuditFilter(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+
+            <div class="audit-filters audit-filters--time">
+              <button
+                v-for="option in auditTimeRangeOptions"
+                :key="option.value"
+                class="audit-filter-chip"
+                :class="{ 'is-active': activeAuditTimeRange === option.value }"
+                type="button"
+                :disabled="loadingAuditEvents"
+                @click="applyAuditTimeRange(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+
+            <div class="audit-search">
+              <input
+                v-model="auditKeywordInput"
+                class="input"
+                type="text"
+                placeholder="按 IP、路径、动作或资源检索"
+                :disabled="loadingAuditEvents"
+                @keydown.enter.prevent="applyAuditKeyword"
+              />
+              <button class="button button--quiet button--compact" type="button" :disabled="loadingAuditEvents" @click="applyAuditKeyword">
+                检索
+              </button>
+            </div>
+
+            <div v-if="auditMessage" class="feedback-message feedback-message--subtle">{{ auditMessage }}</div>
+            <div class="audit-list">
+              <article v-for="event in auditEvents" :key="event.id" class="audit-card">
+                <div class="audit-card__meta">
+                  <strong>{{ getAuditEventLabel(event) }}</strong>
+                  <span>{{ describeAuditEventTime(event.created_at) }}</span>
+                </div>
+                <p>{{ describeAuditEvent(event) }}</p>
+                <div class="audit-card__tags">
+                  <span>{{ event.client_ip }}</span>
+                  <span>{{ event.path }}</span>
+                  <span v-if="event.resource_id">{{ event.resource_id }}</span>
+                </div>
+              </article>
+              <div v-if="!auditEvents.length && !loadingAuditEvents" class="empty-state">
+                <strong class="empty-state__title">暂无审计事件</strong>
+                <span class="empty-state__hint">当管理员鉴权失败或完成关键操作后，这里会记录最近的安全链路。</span>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
     </section>
@@ -421,6 +440,13 @@ const queueSections = computed(() => {
 
 const activeReferenceItem = computed(() => queueItems.value.find((item) => item.id === activeReferenceId.value) || null)
 
+const activeBatchItems = computed(() => {
+  if (!activeBatchId.value) {
+    return [] as FeedbackItem[]
+  }
+  return queueItems.value.filter((item) => item.batch_id === activeBatchId.value)
+})
+
 const allPendingSelected = computed(() => {
   if (queueStatus.value !== 'pending' || !queueItems.value.length) {
     return false
@@ -432,8 +458,13 @@ const reviewItems = computed(() => {
   if (queueStatus.value === 'pending') {
     return selectedItems.value
   }
+  if (activeBatchItems.value.length) {
+    return activeBatchItems.value
+  }
   return activeReferenceItem.value ? [activeReferenceItem.value] : []
 })
+
+const activeReviewRelatedIds = computed(() => [...new Set(reviewItems.value.map((item) => item.related_id))])
 
 const batchSummary = computed(() => {
   const relatedIds = [...new Set(selectedItems.value.map((item) => item.related_id))]
@@ -445,7 +476,12 @@ const batchSummary = computed(() => {
   }
 })
 
-const activeReferenceRelatedId = computed(() => activeReferenceItem.value?.related_id || '')
+const activeReferenceRelatedId = computed(() => {
+  if (activeReviewRelatedIds.value.length === 1) {
+    return activeReviewRelatedIds.value[0]
+  }
+  return activeReferenceItem.value?.related_id || ''
+})
 
 const reviewMissingCount = computed(() => reviewItems.value.reduce((total, item) => total + getMissingFieldCount(item), 0))
 
@@ -458,7 +494,7 @@ const reviewCanCreateBatch = computed(() => {
 
 const reviewDecisionTitle = computed(() => {
   if (queueStatus.value !== 'pending') {
-    return activeReferenceItem.value ? '当前记录可作为回看参考' : '等待选择参考记录'
+    return reviewItems.value.length ? '当前批次可作为回看参考' : '等待选择参考记录'
   }
   if (!selectedItems.value.length) {
     return '先选择要进入本轮判断的反馈'
@@ -474,8 +510,8 @@ const reviewDecisionTitle = computed(() => {
 
 const reviewDecisionDescription = computed(() => {
   if (queueStatus.value !== 'pending') {
-    return activeReferenceItem.value
-      ? '这条记录已经进入后续流程，可以用来回看聚合结果与草稿上下文。'
+    return reviewItems.value.length
+      ? `当前批次共包含 ${reviewItems.value.length} 条反馈，可直接回看聚合结果与草稿上下文。`
       : '从左侧已分组或已提交队列选择一条记录，这里会显示决策判断。'
   }
   if (!selectedItems.value.length) {
@@ -581,7 +617,7 @@ const reviewHeadline = computed(() => {
   if (queueStatus.value === 'pending') {
     return selectedItems.value.length ? '当前选中反馈' : '等待选择反馈'
   }
-  return activeReferenceItem.value ? '当前参考记录' : '等待选择参考项'
+  return reviewItems.value.length ? '当前批次反馈' : '等待选择参考项'
 })
 
 const reviewDescription = computed(() => {
@@ -590,8 +626,8 @@ const reviewDescription = computed(() => {
       ? '确认这些反馈是否属于同一主题，再创建批次。'
       : '从左侧队列中选择待处理反馈，这里会显示原始内容和补充信息。'
   }
-  return activeReferenceItem.value
-    ? '这里展示已处理记录的上下文，便于回看聚合结果。'
+  return reviewItems.value.length
+    ? '这里展示当前批次中的全部反馈，便于统一回看聚合结果。'
     : '从左侧已分组或已提交队列选择一条记录，这里会显示详情。'
 })
 
@@ -1125,10 +1161,13 @@ async function createBatch(): Promise<void> {
     if (response.success) {
       batchMessage.value = `批次创建成功：${response.data.id}`
       activeBatchId.value = response.data.id
-      syncAdminContextToRoute()
+      queueStatus.value = 'grouped'
       selectedIds.value = []
       resetDraftEditor()
       await loadAdminData()
+      const firstGroupedItem = groupedItems.value.find((item) => item.batch_id === response.data.id)
+      activeReferenceId.value = firstGroupedItem?.id || ''
+      syncAdminContextToRoute()
       await focusAdminSection('draft')
     } else {
       batchMessage.value = response.message || '批次创建失败'

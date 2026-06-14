@@ -115,7 +115,7 @@ describe('UserHomePage', () => {
     })
 
     await flushPromises()
-    await wrapper.get('button.button--secondary').trigger('click')
+    await wrapper.get('button.button--quiet').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('已提交 Issue6')
