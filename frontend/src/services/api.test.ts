@@ -22,6 +22,7 @@ describe('api service', () => {
       headers: {
         'X-Admin-Token': 'secret-token',
       },
+      credentials: 'include',
     })
   })
 
@@ -36,6 +37,7 @@ describe('api service', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ raw_content: 'body' }),
+      credentials: 'same-origin',
     })
   })
 
@@ -46,6 +48,7 @@ describe('api service', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/admin/workbench-public/status', {
       headers: {},
+      credentials: 'same-origin',
     })
   })
 
@@ -54,6 +57,7 @@ describe('api service', () => {
 
     expect(fetch).toHaveBeenCalledWith('/api/admin/workbench/feedback', {
       headers: {},
+      credentials: 'include',
     })
   })
 

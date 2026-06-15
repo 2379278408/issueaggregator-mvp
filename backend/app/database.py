@@ -15,6 +15,9 @@ SCHEMA_STATEMENTS = (
         related_id TEXT NOT NULL,
         expected_behavior TEXT,
         actual_behavior TEXT,
+        page_url TEXT,
+        page_title TEXT,
+        environment_context TEXT,
         raw_content TEXT NOT NULL,
         status TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -102,7 +105,40 @@ SCHEMA_STATEMENTS = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_audit_events_type_ip_created_at ON audit_events(event_type, client_ip, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at)",
+    """
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+        id TEXT PRIMARY KEY,
+        session_token_hash TEXT NOT NULL UNIQUE,
+        username TEXT NOT NULL,
+        client_ip TEXT,
+        user_agent_summary TEXT,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        idle_expires_at TEXT NOT NULL,
+        absolute_expires_at TEXT NOT NULL,
+        revoked_at TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_admin_sessions_token_hash ON admin_sessions(session_token_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_admin_sessions_username ON admin_sessions(username)",
+    """
+    CREATE TABLE IF NOT EXISTS admin_login_attempts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        client_ip TEXT,
+        result TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_admin_login_attempts_ip_created_at ON admin_login_attempts(client_ip, created_at)",
 )
+
+FEEDBACK_ITEM_OPTIONAL_COLUMNS = {
+    "page_url": "TEXT",
+    "page_title": "TEXT",
+    "environment_context": "TEXT",
+}
 
 
 def _database_path(database_url: str) -> Path:
@@ -124,7 +160,18 @@ def initialize_database() -> None:
     with get_connection() as connection:
         for statement in SCHEMA_STATEMENTS:
             connection.execute(statement)
+        _ensure_feedback_item_columns(connection)
         connection.commit()
+
+
+def _ensure_feedback_item_columns(connection: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(feedback_items)").fetchall()
+    }
+    for column_name, column_type in FEEDBACK_ITEM_OPTIONAL_COLUMNS.items():
+        if column_name in existing_columns:
+            continue
+        connection.execute(f"ALTER TABLE feedback_items ADD COLUMN {column_name} {column_type}")
 
 
 @contextmanager

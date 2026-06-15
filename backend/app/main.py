@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from .config import get_settings
 from .database import initialize_database
 from .responses import error_response
-from .routers.feedback import admin_router, public_router
+from .routers.feedback import admin_router, public_router, session_router
 from .routers.health import router as health_router
 
 
@@ -29,6 +29,7 @@ app = FastAPI(
 )
 app.include_router(health_router)
 app.include_router(public_router)
+app.include_router(session_router)
 app.include_router(admin_router)
 
 

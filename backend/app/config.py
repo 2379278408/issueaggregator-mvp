@@ -1,8 +1,21 @@
 from __future__ import annotations
 
+import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+_ADMIN_ROUTE_SLUG_PATTERN = re.compile(r"^[a-z0-9]{8,64}$")
+
+
+def _require_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise SystemExit(f"{name} is required but not set")
+    return value
 
 
 def _split_csv_env(name: str) -> tuple[str, ...]:
@@ -46,6 +59,16 @@ class Settings:
     api_base_path: str
     admin_api_namespace: str
     admin_api_token: str | None
+    admin_route_slug: str
+    admin_username: str | None
+    admin_password_hash: str | None
+    admin_session_secret: str | None
+    admin_session_cookie_name: str
+    admin_session_idle_minutes: int
+    admin_session_max_hours: int
+    admin_login_failure_limit: int
+    admin_login_failure_window_minutes: int
+    admin_login_cooldown_minutes: int
     enable_api_docs: bool
     github_token: str | None
     github_repo_owner: str | None
@@ -61,16 +84,52 @@ class Settings:
     public_feedback_duplicate_window_minutes: int
 
 
+def _validate_admin_route_slug(raw_slug: str) -> str:
+    slug = raw_slug.strip()
+    if not slug or not _ADMIN_ROUTE_SLUG_PATTERN.fullmatch(slug):
+        raise SystemExit("ADMIN_ROUTE_SLUG must be 8-64 lowercase alphanumeric characters")
+    return slug
+
+
+def _production_required(name: str, raw_value: str | None) -> str:
+    if not raw_value:
+        raise SystemExit(f"{name} is required in production")
+    return raw_value
+
+
+def _validate_admin_security_settings(app_env: str, admin_username: str | None, admin_password_hash: str | None, admin_session_secret: str | None) -> None:
+    if app_env in {"production", "prod"}:
+        _production_required("ADMIN_USERNAME", admin_username)
+        _production_required("ADMIN_PASSWORD_HASH", admin_password_hash)
+        _production_required("ADMIN_SESSION_SECRET", admin_session_secret)
+
+
 def get_settings() -> Settings:
     _load_env_file()
+    app_env = os.getenv("APP_ENV", "development")
     enable_api_docs = os.getenv("ENABLE_API_DOCS", "false").strip().lower() in {"1", "true", "yes", "on"}
+    admin_route_slug = _validate_admin_route_slug(os.getenv("ADMIN_ROUTE_SLUG", "adminconsole"))
+    admin_username = os.getenv("ADMIN_USERNAME", "").strip() or None
+    admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", "").strip() or None
+    admin_session_secret = os.getenv("ADMIN_SESSION_SECRET", "").strip() or None
+    _validate_admin_security_settings(app_env, admin_username, admin_password_hash, admin_session_secret)
     return Settings(
         app_name=os.getenv("APP_NAME", "Issue Aggregator API"),
-        app_env=os.getenv("APP_ENV", "development"),
+        app_env=app_env,
         database_url=os.getenv("DATABASE_URL", _default_database_url()),
         api_base_path=os.getenv("API_BASE_PATH", "/api").rstrip("/"),
         admin_api_namespace=os.getenv("ADMIN_API_NAMESPACE", "workbench").strip() or "workbench",
         admin_api_token=os.getenv("ADMIN_API_TOKEN"),
+        admin_route_slug=admin_route_slug,
+        admin_username=admin_username,
+        admin_password_hash=admin_password_hash,
+        admin_session_secret=admin_session_secret,
+        admin_session_cookie_name=os.getenv("ADMIN_SESSION_COOKIE_NAME", "ia_admin_session").strip(),
+        admin_session_idle_minutes=int(os.getenv("ADMIN_SESSION_IDLE_MINUTES", "120")),
+        admin_session_max_hours=int(os.getenv("ADMIN_SESSION_MAX_HOURS", "24")),
+        admin_login_failure_limit=int(os.getenv("ADMIN_LOGIN_FAILURE_LIMIT", "5")),
+        admin_login_failure_window_minutes=int(os.getenv("ADMIN_LOGIN_FAILURE_WINDOW_MINUTES", "15")),
+        admin_login_cooldown_minutes=int(os.getenv("ADMIN_LOGIN_COOLDOWN_MINUTES", "30")),
         enable_api_docs=enable_api_docs,
         github_token=os.getenv("GITHUB_TOKEN"),
         github_repo_owner=os.getenv("GITHUB_REPO_OWNER"),

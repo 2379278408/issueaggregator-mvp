@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from dataclasses import replace
+import hashlib
 from types import SimpleNamespace
 
 from fastapi import HTTPException
@@ -261,6 +262,9 @@ class ApiTestCase(unittest.TestCase):
             raw_content="复制按钮在暗色模式下不可见",
             expected_behavior="按钮可见",
             actual_behavior="按钮颜色过浅",
+            page_url="https://app.example.com/editor",
+            page_title="编辑器页面",
+            environment_context="language=zh-CN | viewport=1440x900",
         )
         response = self.create_feedback(payload, request=self.make_request_stub())
 
@@ -303,6 +307,69 @@ class ApiTestCase(unittest.TestCase):
 
         first = self.create_feedback(payload, request=self.make_request_stub())
         duplicate = self.create_feedback(payload, request=self.make_request_stub())
+
+        self.assertTrue(first["success"])
+        self.assertFalse(duplicate["success"])
+        self.assertEqual(duplicate["error_code"], "FEEDBACK_DUPLICATE_CONTENT")
+
+    def test_create_feedback_allows_same_content_with_different_page_url(self) -> None:
+        first = self.create_feedback(
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="复制按钮在暗色模式下不可见",
+                expected_behavior="按钮可见",
+                actual_behavior="按钮颜色过浅",
+                page_url="https://app.example.com/editor",
+                page_title="编辑器页面",
+                environment_context="language=zh-CN | viewport=1440x900",
+            ),
+            request=self.make_request_stub(),
+        )
+        second = self.create_feedback(
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="复制按钮在暗色模式下不可见",
+                expected_behavior="按钮可见",
+                actual_behavior="按钮颜色过浅",
+                page_url="https://app.example.com/settings",
+                page_title="设置页",
+                environment_context="language=zh-CN | viewport=390x844",
+            ),
+            request=self.make_request_stub(),
+        )
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+
+    def test_create_feedback_rejects_same_content_with_only_context_changes(self) -> None:
+        first = self.create_feedback(
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="复制按钮在暗色模式下不可见",
+                expected_behavior="按钮可见",
+                actual_behavior="按钮颜色过浅",
+                page_url="https://app.example.com/editor",
+                page_title="编辑器页面",
+                environment_context="language=zh-CN | viewport=1440x900",
+            ),
+            request=self.make_request_stub(),
+        )
+        duplicate = self.create_feedback(
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="复制按钮在暗色模式下不可见",
+                expected_behavior="按钮可见",
+                actual_behavior="按钮颜色过浅",
+                page_url="https://app.example.com/editor",
+                page_title="编辑器页面窄屏",
+                environment_context="language=en-US | viewport=390x844",
+            ),
+            request=self.make_request_stub(),
+        )
 
         self.assertTrue(first["success"])
         self.assertFalse(duplicate["success"])
@@ -440,6 +507,39 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["success"])
+
+    def test_admin_session_login_accepts_valid_credentials_with_non_ip_peer(self) -> None:
+        os.environ["ADMIN_USERNAME"] = "admin"
+        os.environ["ADMIN_PASSWORD_HASH"] = hashlib.sha256("secret-pass".encode()).hexdigest()
+
+        response = self.http_client.post(
+            "/api/admin/workbench/session/login",
+            json={"username": "admin", "password": "secret-pass"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["username"], "admin")
+        self.assertIn("ia_admin_session=", response.headers.get("set-cookie", ""))
+        os.environ.pop("ADMIN_USERNAME", None)
+        os.environ.pop("ADMIN_PASSWORD_HASH", None)
+
+    def test_admin_session_login_rejects_wrong_username_even_with_valid_password(self) -> None:
+        os.environ["ADMIN_USERNAME"] = "admin"
+        os.environ["ADMIN_PASSWORD_HASH"] = hashlib.sha256("secret-pass".encode()).hexdigest()
+
+        response = self.http_client.post(
+            "/api/admin/workbench/session/login",
+            json={"username": "spoofed", "password": "secret-pass"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "AUTH_INVALID_CREDENTIALS")
+        os.environ.pop("ADMIN_USERNAME", None)
+        os.environ.pop("ADMIN_PASSWORD_HASH", None)
 
     def test_create_feedback_rejects_invalid_related_id(self) -> None:
         with self.assertRaises(ValidationError):

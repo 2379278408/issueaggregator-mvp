@@ -74,6 +74,38 @@ class RepositoryModelTestCase(unittest.TestCase):
                 raw_content="x" * 2001,
             )
 
+    def test_feedback_payload_sanitizes_page_url(self) -> None:
+        payload = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="valid content",
+            page_url="https://app.example.com/editor?token=secret#composer",
+        )
+
+        self.assertEqual(payload.page_url, "https://app.example.com/editor")
+
+    def test_feedback_payload_truncates_long_page_url_after_sanitizing(self) -> None:
+        long_path = "/" + ("segment-" * 160)
+        payload = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="valid content",
+            page_url=f"https://app.example.com{long_path}?token=secret",
+        )
+
+        self.assertLessEqual(len(payload.page_url), 1000)
+        self.assertNotIn("?token=secret", payload.page_url)
+
+    def test_feedback_payload_preserves_non_network_scheme_without_query_or_hash(self) -> None:
+        payload = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="valid content",
+            page_url="mailto:support@example.com?subject=Help#draft",
+        )
+
+        self.assertEqual(payload.page_url, "mailto:support@example.com")
+
     def test_draft_batch_payload_rejects_duplicate_feedback_ids(self) -> None:
         from app.models import DraftBatchCreatePayload
 
@@ -116,6 +148,87 @@ class RepositoryModelTestCase(unittest.TestCase):
         )
 
         self.assertEqual(duplicate_count, 1)
+
+    def test_feedback_repository_treats_different_page_url_as_non_duplicate(self) -> None:
+        repository = self.FeedbackRepository()
+        original = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="first item",
+            expected_behavior="visible",
+            actual_behavior="hidden",
+            page_url="https://app.example.com/editor",
+            page_title="Editor",
+            environment_context="language=en-US | viewport=1440x900",
+        )
+        variant = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="first item",
+            expected_behavior="visible",
+            actual_behavior="hidden",
+            page_url="https://app.example.com/settings",
+            page_title="Settings",
+            environment_context="language=zh-CN | viewport=390x844",
+        )
+        repository.create_feedback(original)
+
+        duplicate_count = repository.count_recent_duplicate_feedback(
+            variant,
+            since_iso="2026-01-01T00:00:00Z",
+        )
+
+        self.assertEqual(duplicate_count, 0)
+
+    def test_feedback_repository_treats_environment_only_change_as_duplicate(self) -> None:
+        repository = self.FeedbackRepository()
+        original = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="first item",
+            expected_behavior="visible",
+            actual_behavior="hidden",
+            page_url="https://app.example.com/editor",
+            page_title="Editor",
+            environment_context="language=en-US | viewport=1440x900",
+        )
+        variant = self.FeedbackCreatePayload(
+            type="bug",
+            related_id="editor-copy-button",
+            raw_content="first item",
+            expected_behavior="visible",
+            actual_behavior="hidden",
+            page_url="https://app.example.com/editor",
+            page_title="Editor narrow",
+            environment_context="language=zh-CN | viewport=390x844",
+        )
+        repository.create_feedback(original)
+
+        duplicate_count = repository.count_recent_duplicate_feedback(
+            variant,
+            since_iso="2026-01-01T00:00:00Z",
+        )
+
+        self.assertEqual(duplicate_count, 1)
+
+    def test_feedback_repository_persists_optional_context_fields(self) -> None:
+        repository = self.FeedbackRepository()
+        stored = repository.create_feedback(
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="copy button is invisible",
+                page_url="https://app.example.com/editor",
+                page_title="Editor",
+                environment_context="language=en-US | viewport=1440x900",
+            )
+        )
+
+        items = repository.get_feedback_by_ids([stored.id])
+
+        self.assertEqual(items[0].page_url, "https://app.example.com/editor")
+        self.assertEqual(items[0].page_title, "Editor")
+        self.assertEqual(items[0].environment_context, "language=en-US | viewport=1440x900")
 
     def test_audit_event_repository_counts_recent_events(self) -> None:
         repository = self.AuditEventRepository()
@@ -350,6 +463,33 @@ class RepositoryModelTestCase(unittest.TestCase):
         self.assertIn("## 待补充信息", draft.body_markdown)
         self.assertIn("缺少期望表现", draft.body_markdown)
         self.assertIn("## 原始反馈", draft.body_markdown)
+
+    def test_integrate_batch_includes_feedback_context_in_prompt_and_markdown(self) -> None:
+        feedback_repository = self.FeedbackRepository()
+        batch_service = self.DraftBatchService()
+        integration_service = self.DraftIntegrationService()
+
+        first = feedback_repository.create_feedback(
+            self.FeedbackCreatePayload(
+                type="bug",
+                related_id="editor-copy-button",
+                raw_content="copy button is invisible",
+                expected_behavior="button should be visible",
+                actual_behavior="button blends into the background",
+                page_url="https://app.example.com/editor",
+                page_title="Editor",
+                environment_context="language=en-US | viewport=1440x900",
+            )
+        )
+        batch = batch_service.create_batch([first.id], confirm_mixed_related_ids=False)
+
+        draft = integration_service.integrate_batch(batch.id)
+
+        self.assertIn("页面标题: Editor", draft.prompt_snapshot)
+        self.assertIn("页面链接: https://app.example.com/editor", draft.prompt_snapshot)
+        self.assertIn("运行环境: language=en-US | viewport=1440x900", draft.prompt_snapshot)
+        self.assertIn(f"反馈 {first.id} 上下文", draft.body_markdown)
+        self.assertIn("页面链接：https://app.example.com/editor", draft.body_markdown)
 
     def test_update_draft_persists_new_content(self) -> None:
         batch_repository = self.DraftBatchRepository()

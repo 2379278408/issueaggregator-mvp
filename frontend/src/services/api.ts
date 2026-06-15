@@ -22,6 +22,9 @@ export type FeedbackItem = {
   raw_content: string
   expected_behavior?: string | null
   actual_behavior?: string | null
+  page_url?: string | null
+  page_title?: string | null
+  environment_context?: string | null
   status: string
   created_at: string
   submitted_at?: string | null
@@ -55,6 +58,9 @@ export type FeedbackCreatePayload = {
   raw_content: string
   expected_behavior?: string
   actual_behavior?: string
+  page_url?: string
+  page_title?: string
+  environment_context?: string
 }
 
 export type DraftBatchCreatePayload = {
@@ -101,10 +107,27 @@ export type DraftSubmitResponse = {
   submitted_at: string
 }
 
+export type AdminSessionStatus = {
+  authenticated: boolean
+  username: string | null
+  session_expires_at: string | null
+  idle_expires_at: string | null
+}
+
+export type AdminLoginResult = {
+  username: string
+  session_expires_at: string
+  idle_expires_at: string
+}
+
 const publicApiBasePath = ((import.meta.env.VITE_API_BASE_PATH as string | undefined)?.trim() || '/api').replace(/\/$/, '')
 const adminNamespace = (import.meta.env.VITE_ADMIN_API_NAMESPACE as string | undefined)?.trim() || 'workbench'
 const adminApiBasePath = `${publicApiBasePath}/admin/${adminNamespace}`
 const adminTokenStorageKey = 'issueAggregatorAdminToken'
+
+function isAdminPath(path: string): boolean {
+  return path === adminApiBasePath || path.startsWith(`${adminApiBasePath}/`) || path.startsWith(`${adminApiBasePath}?`)
+}
 
 async function parseResponse<T>(response: Response): Promise<ApiEnvelope<T>> {
   try {
@@ -172,10 +195,11 @@ export function clearAdminToken(): void {
 
 function buildHeaders(path: string, includeJson = false): HeadersInit {
   const headers: Record<string, string> = includeJson ? { 'Content-Type': 'application/json' } : {}
-  const isAdminApiPath = path === adminApiBasePath || path.startsWith(`${adminApiBasePath}/`) || path.startsWith(`${adminApiBasePath}?`)
-  const adminToken = isAdminApiPath ? getAdminToken() : undefined
-  if (adminToken) {
-    headers['X-Admin-Token'] = adminToken
+  if (isAdminPath(path)) {
+    const adminToken = getAdminToken()
+    if (adminToken) {
+      headers['X-Admin-Token'] = adminToken
+    }
   }
   return headers
 }
@@ -183,6 +207,7 @@ function buildHeaders(path: string, includeJson = false): HeadersInit {
 export async function apiGet<T>(path: string): Promise<ApiEnvelope<T>> {
   return requestApi<T>(path, {
     headers: buildHeaders(path),
+    credentials: isAdminPath(path) ? 'include' : 'same-origin',
   })
 }
 
@@ -191,6 +216,7 @@ export async function apiPost<TResponse, TPayload>(path: string, payload: TPaylo
     method: 'POST',
     headers: buildHeaders(path, true),
     body: JSON.stringify(payload),
+    credentials: isAdminPath(path) ? 'include' : 'same-origin',
   })
 }
 
@@ -199,7 +225,26 @@ export async function apiPut<TResponse, TPayload>(path: string, payload: TPayloa
     method: 'PUT',
     headers: buildHeaders(path, true),
     body: JSON.stringify(payload),
+    credentials: isAdminPath(path) ? 'include' : 'same-origin',
   })
+}
+
+export async function adminLogin(username: string, password: string): Promise<ApiEnvelope<AdminLoginResult>> {
+  return apiPost<AdminLoginResult, { username: string; password: string }>(
+    buildAdminApiPath('/session/login'),
+    { username, password },
+  )
+}
+
+export async function adminSessionMe(): Promise<ApiEnvelope<AdminSessionStatus>> {
+  return apiGet<AdminSessionStatus>(buildAdminApiPath('/session/me'))
+}
+
+export async function adminLogout(): Promise<ApiEnvelope<{ status: string }>> {
+  return apiPost<{ status: string }, Record<string, never>>(
+    buildAdminApiPath('/session/logout'),
+    {} as Record<string, never>,
+  )
 }
 
 export function buildSubmittedIssueSearch(params: {

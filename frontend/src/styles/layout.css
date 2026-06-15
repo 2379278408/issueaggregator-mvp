@@ -4,6 +4,10 @@
   padding: 18px var(--space-5) 48px;
 }
 
+.page-shell--wide {
+  max-width: 1440px;
+}
+
 .page-shell__header {
   display: flex;
   justify-content: space-between;

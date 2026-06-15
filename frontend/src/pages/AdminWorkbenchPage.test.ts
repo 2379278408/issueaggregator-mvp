@@ -7,6 +7,12 @@ const { apiGet, apiPost, apiPut } = vi.hoisted(() => ({
   apiPut: vi.fn(),
 }))
 
+const { adminLogin, adminLogout, adminSessionMe } = vi.hoisted(() => ({
+  adminLogin: vi.fn(),
+  adminLogout: vi.fn(),
+  adminSessionMe: vi.fn(),
+}))
+
 const { routeQuery, routerReplace } = vi.hoisted(() => ({
   routeQuery: {} as Record<string, string>,
   routerReplace: vi.fn(),
@@ -23,6 +29,9 @@ vi.mock('../services/api', () => ({
   apiGet,
   apiPost,
   apiPut,
+  adminLogin,
+  adminLogout,
+  adminSessionMe,
   buildAdminApiPath: (path: string) => `/api/admin/workbench${path}`,
   clearAdminToken: () => window.sessionStorage.removeItem('issueAggregatorAdminToken'),
   hasAdminToken: () => Boolean(window.sessionStorage.getItem('issueAggregatorAdminToken')),
@@ -31,7 +40,8 @@ vi.mock('../services/api', () => ({
 
 function mountPage(options: { unlocked?: boolean } = { unlocked: true }) {
   if (options.unlocked !== false) {
-    window.sessionStorage.setItem('issueAggregatorAdminToken', 'secret-token')
+    window.sessionStorage.setItem('issueAggregatorAdminToken', 'session-active')
+    adminSessionMe.mockResolvedValue({ success: true, data: { authenticated: true, username: 'admin', session_expires_at: '2030-01-01T00:00:00Z', idle_expires_at: '2030-01-01T00:00:00Z' } })
   }
 
   return mount(AdminWorkbenchPage, {
@@ -55,16 +65,20 @@ describe('AdminWorkbenchPage', () => {
     apiGet.mockReset()
     apiPost.mockReset()
     apiPut.mockReset()
+    adminLogin.mockReset()
+    adminLogout.mockReset()
+    adminSessionMe.mockReset()
     routerReplace.mockReset()
     Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
     apiGet.mockResolvedValue({ success: true, data: { items: [], page: 1, page_size: 20, total: 0 } })
+    adminSessionMe.mockResolvedValue({ success: true, data: { authenticated: false, username: null, session_expires_at: null, idle_expires_at: null } })
   })
 
-  it('keeps admin data locked until a token is provided', async () => {
+  it('keeps admin data locked until login succeeds', async () => {
     const wrapper = mountPage({ unlocked: false })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('输入管理凭据')
+    expect(wrapper.text()).toContain('管理员登录')
     expect(wrapper.find('.admin-layout').exists()).toBe(false)
     expect(apiGet).not.toHaveBeenCalled()
 
@@ -72,28 +86,50 @@ describe('AdminWorkbenchPage', () => {
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
+    adminLogin.mockResolvedValueOnce({ success: true, data: { username: 'admin', session_expires_at: '2030-01-01T00:00:00Z', idle_expires_at: '2030-01-01T00:00:00Z' } })
 
-    await wrapper.get('input[type="password"]').setValue('secret-token')
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('admin')
+    await inputs[1].setValue('password')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBe('secret-token')
+    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBe('session-active')
     expect(apiGet).toHaveBeenCalled()
   })
 
-  it('returns to the token form when the entered token cannot load admin data', async () => {
+  it('returns to the login form when login fails', async () => {
     apiGet.mockResolvedValue({ success: false, message: 'invalid token', http_status: 401 })
+    adminLogin.mockResolvedValue({ success: false, message: '用户名或密码错误。' })
 
     const wrapper = mountPage({ unlocked: false })
     await flushPromises()
 
-    await wrapper.get('input[type="password"]').setValue('wrong-token')
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('admin')
+    await inputs[1].setValue('wrong')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('管理 token 无效，请重新输入。')
-    expect(wrapper.text()).toContain('输入管理凭据')
+    expect(wrapper.text()).toContain('用户名或密码错误。')
+    expect(wrapper.text()).toContain('管理员登录')
     expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBeNull()
+  })
+
+  it('shows the cooldown message when admin login is temporarily blocked', async () => {
+    adminLogin.mockResolvedValue({ success: false, error_code: 'ADMIN_LOGIN_COOLDOWN_ACTIVE', message: '登录冷却中，请 29m 59s 后再试。' })
+
+    const wrapper = mountPage({ unlocked: false })
+    await flushPromises()
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('admin')
+    await inputs[1].setValue('wrong')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('登录冷却中，请 29m 59s 后再试。')
+    expect(wrapper.text()).toContain('管理员登录')
   })
 
   it('loads feedback counts on mount', async () => {
@@ -313,14 +349,14 @@ describe('AdminWorkbenchPage', () => {
     expect(routerReplace).toHaveBeenLastCalledWith({ query: { adminQueue: 'grouped' } })
   })
 
-  it('returns to the token form when stored admin token is rejected', async () => {
+  it('returns to the login form when stored admin session is rejected', async () => {
     apiGet.mockResolvedValue({ success: false, message: 'invalid token', http_status: 401 })
 
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('管理 token 无效，请重新输入。')
-    expect(wrapper.text()).toContain('输入管理凭据')
+    expect(wrapper.text()).toContain('登录态已失效，请重新登录。')
+    expect(wrapper.text()).toContain('管理员登录')
     expect(wrapper.text()).not.toContain('正在加载')
   })
 
@@ -330,9 +366,28 @@ describe('AdminWorkbenchPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBe('secret-token')
-    expect(wrapper.text()).toContain('管理数据加载失败，请检查后端服务或管理 token。')
+    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBe('session-active')
+    expect(wrapper.text()).toContain('管理数据加载失败，请检查后端服务。')
     expect(wrapper.text()).toContain('整理反馈，生成 Issue')
+  })
+
+  it('returns to the login form after logout', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+    adminLogout.mockResolvedValue({ success: true, data: { status: 'logged_out' } })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '登出')!.trigger('click')
+    await flushPromises()
+
+    expect(adminLogout).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBeNull()
+    expect(wrapper.text()).toContain('管理员登录')
   })
 
   it('clears stale queue data when a later admin refresh fails', async () => {

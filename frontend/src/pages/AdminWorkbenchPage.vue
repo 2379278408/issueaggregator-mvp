@@ -2,18 +2,23 @@
   <AppShell
     title="Issue Triage Studio"
     description="整理反馈，生成 GitHub Issue 草稿。"
+    wide
   >
     <section v-if="!isAdminUnlocked" class="admin-auth-screen">
       <form class="admin-auth-card" @submit.prevent="unlockAdmin">
         <p class="eyebrow">Restricted Area</p>
-        <h2>输入管理凭据</h2>
-        <p>输入管理 token 后加载队列和草稿。</p>
+        <h2>管理员登录</h2>
+        <p>输入账号密码后加载队列和草稿。</p>
         <label class="field field--full">
-          <span>管理 token</span>
-          <input v-model="adminTokenInput" class="input" type="password" autocomplete="current-password" placeholder="X-Admin-Token" />
+          <span>用户名</span>
+          <input v-model="adminUsernameInput" class="input" type="text" autocomplete="username" placeholder="admin" />
+        </label>
+        <label class="field field--full">
+          <span>密码</span>
+          <input v-model="adminPasswordInput" class="input" type="password" autocomplete="current-password" placeholder="********" />
         </label>
         <div v-if="adminAuthMessage" class="feedback-message feedback-message--error">{{ adminAuthMessage }}</div>
-        <button class="button" type="submit">进入管理页</button>
+        <button class="button" type="submit" :disabled="isLoggingIn">{{ isLoggingIn ? '登录中…' : '登录' }}</button>
       </form>
     </section>
 
@@ -22,27 +27,96 @@
         <div>
           <p class="eyebrow">Private Studio</p>
           <h2>整理反馈，生成 Issue</h2>
-          <p>选择信号、确认主题、编辑草稿。</p>
+          <p>左侧导航负责切换工作区，中间专注当前操作，右侧始终保留批次上下文和推进状态。</p>
         </div>
-        <div class="triage-studio__stats" aria-label="反馈状态统计">
-          <button class="triage-tab" :class="{ 'is-active': queueStatus === 'pending' }" type="button" @click="switchQueue('pending')">
-            <span>待整理</span>
-            <strong>{{ statusCounts.pending }}</strong>
-          </button>
-          <button class="triage-tab" :class="{ 'is-active': queueStatus === 'grouped' }" type="button" @click="switchQueue('grouped')">
-            <span>草稿中</span>
-            <strong>{{ statusCounts.grouped }}</strong>
-          </button>
-          <button class="triage-tab" :class="{ 'is-active': queueStatus === 'submitted' }" type="button" @click="switchQueue('submitted')">
-            <span>已发布</span>
-            <strong>{{ statusCounts.submitted }}</strong>
-          </button>
+        <div class="triage-studio__header-meta">
+          <div class="triage-studio__summary-pill">
+            <span>管理员</span>
+            <strong>{{ adminUsername || '-' }}</strong>
+          </div>
+          <div class="triage-studio__summary-pill">
+            <span>当前焦点</span>
+            <strong>{{ activeAdminSectionLabel }}</strong>
+          </div>
+          <div class="triage-studio__summary-pill triage-studio__summary-pill--accent">
+            <span>当前队列</span>
+            <strong>{{ queueHeading }}</strong>
+          </div>
+          <button class="button button--subtle" type="button" @click="handleAdminLogout">登出</button>
         </div>
       </header>
 
       <div v-if="adminDataMessage" class="feedback-message feedback-message--error">{{ adminDataMessage }}</div>
 
-      <section class="triage-grid">
+      <section class="triage-layout admin-layout">
+        <aside class="triage-sidebar" aria-label="管理工作区导航">
+          <section class="triage-sidebar__panel">
+            <div class="studio-section-head studio-section-head--stacked">
+              <div>
+                <span>Queue Switch</span>
+                <h3>处理队列</h3>
+              </div>
+              <p>先切换到当前要处理的队列，再进入对应工作步骤。</p>
+            </div>
+            <div class="triage-sidebar__status-list" aria-label="反馈状态统计">
+              <button class="triage-tab triage-tab--sidebar" :class="{ 'is-active': queueStatus === 'pending' }" type="button" @click="switchQueue('pending')">
+                <span>待整理</span>
+                <strong>{{ statusCounts.pending }}</strong>
+              </button>
+              <button class="triage-tab triage-tab--sidebar" :class="{ 'is-active': queueStatus === 'grouped' }" type="button" @click="switchQueue('grouped')">
+                <span>草稿中</span>
+                <strong>{{ statusCounts.grouped }}</strong>
+              </button>
+              <button class="triage-tab triage-tab--sidebar" :class="{ 'is-active': queueStatus === 'submitted' }" type="button" @click="switchQueue('submitted')">
+                <span>已发布</span>
+                <strong>{{ statusCounts.submitted }}</strong>
+              </button>
+            </div>
+          </section>
+
+          <section class="triage-sidebar__panel">
+            <div class="studio-section-head studio-section-head--stacked">
+              <div>
+                <span>Studio Nav</span>
+                <h3>工作步骤</h3>
+              </div>
+              <p>按照队列、审阅、草稿、审计的顺序推进当前处理链路。</p>
+            </div>
+            <div class="triage-sidebar__nav-list">
+              <button class="triage-nav-card" :class="{ 'is-active': activeAdminSection === 'queue' }" type="button" @click="focusAdminSection('queue')">
+                <div>
+                  <span>01</span>
+                  <strong>反馈队列</strong>
+                </div>
+                <small>{{ queueItems.length }} 条</small>
+              </button>
+              <button class="triage-nav-card" :class="{ 'is-active': activeAdminSection === 'review' }" type="button" @click="focusAdminSection('review')">
+                <div>
+                  <span>02</span>
+                  <strong>主题判断</strong>
+                </div>
+                <small>{{ reviewItems.length }} 条</small>
+              </button>
+              <button class="triage-nav-card" :class="{ 'is-active': activeAdminSection === 'draft' }" type="button" @click="focusAdminSection('draft')">
+                <div>
+                  <span>03</span>
+                  <strong>草稿编辑</strong>
+                </div>
+                <small>{{ currentDraftId ? '可提交' : '待生成' }}</small>
+              </button>
+              <button class="triage-nav-card" :class="{ 'is-active': activeAdminSection === 'audit' }" type="button" @click="focusAdminSection('audit')">
+                <div>
+                  <span>04</span>
+                  <strong>审计记录</strong>
+                </div>
+                <small>{{ auditEvents.length }} 条</small>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        <section class="triage-main">
+          <section class="triage-grid">
         <article id="queue-panel" class="signal-stream">
           <header class="studio-section-head">
             <div>
@@ -252,7 +326,7 @@
             </div>
           </article>
 
-          <section class="audit-stream audit-stream--secondary">
+          <section id="audit-panel" class="audit-stream audit-stream--secondary">
             <header class="studio-section-head">
               <div>
                 <span>Security Events</span>
@@ -332,6 +406,76 @@
           </section>
         </div>
       </section>
+        </section>
+
+        <aside class="triage-context" aria-label="当前工作上下文">
+          <section class="triage-context__panel">
+            <div class="studio-section-head studio-section-head--stacked">
+              <div>
+                <span>Workflow Rail</span>
+                <h3>推进状态</h3>
+              </div>
+              <p>始终查看当前工作流停在哪一步，以及下一步动作是什么。</p>
+            </div>
+            <div class="workflow-rail">
+              <article v-for="step in workflowSteps" :key="step.index" class="workflow-step" :class="step.state">
+                <span>{{ step.index }}</span>
+                <strong>{{ step.label }}</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="triage-context__panel triage-context__panel--accent">
+            <div class="studio-section-head studio-section-head--stacked">
+              <div>
+                <span>Live Context</span>
+                <h3>{{ contextPanelTitle }}</h3>
+              </div>
+              <p>{{ contextPanelDescription }}</p>
+            </div>
+            <div class="triage-context__facts">
+              <article>
+                <span>当前队列</span>
+                <strong>{{ queueHeading }}</strong>
+              </article>
+              <article>
+                <span>主关联标识</span>
+                <strong>{{ contextPrimaryRelatedId }}</strong>
+              </article>
+              <article>
+                <span>当前条目数</span>
+                <strong>{{ reviewItems.length }}</strong>
+              </article>
+              <article>
+                <span>缺失字段</span>
+                <strong>{{ reviewMissingCount }}</strong>
+              </article>
+            </div>
+            <div class="triage-context__subhead">
+              <span>Batch Snapshot</span>
+              <strong>批次速览</strong>
+            </div>
+            <dl class="triage-context__snapshot">
+              <div>
+                <dt>批次 ID</dt>
+                <dd>{{ activeBatchId || '待创建' }}</dd>
+              </div>
+              <div>
+                <dt>草稿状态</dt>
+                <dd>{{ draftStatusLabel }}</dd>
+              </div>
+              <div>
+                <dt>草稿标识</dt>
+                <dd>{{ draftRelatedIdSummary }}</dd>
+              </div>
+              <div>
+                <dt>最近更新</dt>
+                <dd>{{ draftUpdatedAtLabel }}</dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
+      </section>
     </section>
   </AppShell>
 </template>
@@ -342,15 +486,19 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from '../components/layout/AppShell.vue'
 import {
+  adminLogin,
+  adminLogout,
+  adminSessionMe,
   apiGet,
   apiPost,
   apiPut,
   buildAdminApiPath,
+  buildSubmittedIssueSearch,
   clearAdminToken,
   hasAdminToken,
   setAdminToken,
+  type AdminSessionStatus,
   type AuditEventRecord,
-  type ApiEnvelope,
   type DraftBatchCreatePayload,
   type DraftBatchCreateResponse,
   type DraftIntegrateResponse,
@@ -362,7 +510,7 @@ import {
 } from '../services/api'
 
 type QueueStatus = 'pending' | 'grouped' | 'submitted'
-type AdminSection = 'queue' | 'review' | 'draft'
+type AdminSection = 'queue' | 'review' | 'draft' | 'audit'
 type AuditEventFilter = 'all' | 'admin_auth_failed' | 'admin_action_succeeded'
 type AuditTimeRange = 'all' | '10m' | '1h' | '24h'
 type AdminRouteContext = {
@@ -410,7 +558,10 @@ const activeAuditTimeRange = ref<AuditTimeRange>('all')
 const auditKeyword = ref('')
 const auditKeywordInput = ref('')
 const isAdminUnlocked = ref(hasAdminToken())
-const adminTokenInput = ref('')
+const adminUsernameInput = ref('')
+const adminPasswordInput = ref('')
+const adminUsername = ref<string | null>(null)
+const isLoggingIn = ref(false)
 const adminAuthMessage = ref('')
 const adminDataMessage = ref('')
 const route = useRoute()
@@ -715,6 +866,9 @@ const workflowSteps = computed(() => [
 ])
 
 const activeAdminSectionLabel = computed(() => {
+  if (activeAdminSection.value === 'audit') {
+    return '审计与安全'
+  }
   if (activeAdminSection.value === 'review') {
     return '聚合审阅'
   }
@@ -722,6 +876,51 @@ const activeAdminSectionLabel = computed(() => {
     return '草稿与提交'
   }
   return '反馈队列'
+})
+
+const contextPrimaryRelatedId = computed(() => {
+  if (draftRelatedIdSummary.value && draftRelatedIdSummary.value !== '待确认') {
+    return draftRelatedIdSummary.value
+  }
+  if (batchSummary.value.primaryRelatedId) {
+    return batchSummary.value.primaryRelatedId
+  }
+  if (activeReferenceRelatedId.value) {
+    return activeReferenceRelatedId.value
+  }
+  return '待确认'
+})
+
+const contextPanelTitle = computed(() => {
+  if (activeAdminSection.value === 'audit') {
+    return '回看安全链路'
+  }
+  if (activeAdminSection.value === 'draft') {
+    return submissionResult.value ? '已完成提交' : '准备编辑与提交'
+  }
+  if (activeAdminSection.value === 'review') {
+    return reviewItems.value.length ? '当前主题判断中' : '等待进入主题判断'
+  }
+  return queueStatus.value === 'pending' ? '待整理反馈收件箱' : '历史批次回看模式'
+})
+
+const contextPanelDescription = computed(() => {
+  if (activeAdminSection.value === 'audit') {
+    return '这里主要用于确认管理员操作是否完整落库，以及近期是否存在异常鉴权。'
+  }
+  if (activeAdminSection.value === 'draft') {
+    return submissionResult.value
+      ? '当前批次已经提交到 GitHub，可以继续检查结果或切换到新的批次。'
+      : '草稿编辑区已经接管主流程，接下来重点确认标题、正文和提交状态。'
+  }
+  if (activeAdminSection.value === 'review') {
+    return reviewItems.value.length
+      ? '当前区块用于判断这些反馈是否属于同一主题，并确定是否适合建批。'
+      : '先从左侧队列中勾选或选中反馈，系统才会生成主题判断。'
+  }
+  return queueStatus.value === 'pending'
+    ? '优先在这里完成勾选和粗分组，避免把太多信息直接堆进后续编辑区。'
+    : '当前处于历史回看模式，重点是沿着已分组或已提交链路快速回到对应草稿。'
 })
 
 let sectionObserver: IntersectionObserver | null = null
@@ -964,7 +1163,13 @@ async function focusAdminSection(section: AdminSection): Promise<void> {
 
   await nextTick()
 
-  const elementId = section === 'queue' ? 'queue-panel' : section === 'review' ? 'review-panel' : 'draft-panel'
+  const elementId = section === 'queue'
+    ? 'queue-panel'
+    : section === 'review'
+      ? 'review-panel'
+      : section === 'draft'
+        ? 'draft-panel'
+        : 'audit-panel'
   const element = document.getElementById(elementId)
   if (!element) {
     return
@@ -1188,11 +1393,11 @@ async function loadAdminData(options: { relockOnAuthFailure?: boolean } = {}): P
     return true
   } catch (error) {
     if (options.relockOnAuthFailure && isAuthFailureStatus(getErrorHttpStatus(error))) {
-      relockAdmin('管理 token 无效，请重新输入。')
+      relockAdmin('登录态已失效，请重新登录。')
       return false
     }
     clearAdminQueueState()
-    adminDataMessage.value = '管理数据加载失败，请检查后端服务或管理 token。'
+    adminDataMessage.value = '管理数据加载失败，请检查后端服务。'
     return false
   } finally {
     loading.value = false
@@ -1200,22 +1405,52 @@ async function loadAdminData(options: { relockOnAuthFailure?: boolean } = {}): P
 }
 
 async function unlockAdmin(): Promise<void> {
-  const token = adminTokenInput.value.trim()
-  if (!token) {
-    adminAuthMessage.value = '请输入管理 token。'
+  const username = adminUsernameInput.value.trim()
+  const password = adminPasswordInput.value
+  if (!username || !password) {
+    adminAuthMessage.value = '请输入用户名和密码。'
     return
   }
 
-  setAdminToken(token)
-  isAdminUnlocked.value = true
+  isLoggingIn.value = true
   adminAuthMessage.value = ''
-  const loaded = await loadAdminData({ relockOnAuthFailure: true })
-  if (!loaded) {
-    return
+
+  try {
+    const result = await adminLogin(username, password)
+    if (!result.success) {
+      const message = result.error_code === 'ADMIN_LOGIN_COOLDOWN_ACTIVE'
+        ? result.message || '登录冷却中，请稍后重试。'
+        : '用户名或密码错误。'
+      adminAuthMessage.value = message
+      return
+    }
+
+    adminUsername.value = result.data.username
+    adminPasswordInput.value = ''
+    isAdminUnlocked.value = true
+    setAdminToken('session-active')
+    const loaded = await loadAdminData({ relockOnAuthFailure: true })
+    if (!loaded) {
+      return
+    }
+    await loadAuditEvents()
+    await nextTick()
+    setupSectionObserver()
+  } finally {
+    isLoggingIn.value = false
   }
-  await loadAuditEvents()
-  await nextTick()
-  setupSectionObserver()
+}
+
+async function handleAdminLogout(): Promise<void> {
+  try {
+    await adminLogout()
+  } finally {
+    clearAdminToken()
+    isAdminUnlocked.value = false
+    adminUsername.value = null
+    adminAuthMessage.value = ''
+    clearAdminWorkspaceState()
+  }
 }
 
 async function createBatch(): Promise<void> {
@@ -1423,6 +1658,7 @@ function setupSectionObserver(): void {
     { id: 'queue-panel', section: 'queue' as const },
     { id: 'review-panel', section: 'review' as const },
     { id: 'draft-panel', section: 'draft' as const },
+    { id: 'audit-panel', section: 'audit' as const },
   ]
 
   sectionObserver = new IntersectionObserver(
@@ -1457,6 +1693,17 @@ function setupSectionObserver(): void {
 onMounted(async () => {
   restoreAuditFiltersFromRoute()
   restoreQueueStatusFromRoute()
+
+  const sessionResult = await adminSessionMe()
+  if (sessionResult.success && sessionResult.data.authenticated) {
+    adminUsername.value = sessionResult.data.username
+    isAdminUnlocked.value = true
+    setAdminToken('session-active')
+  } else if (hasAdminToken()) {
+    clearAdminToken()
+    isAdminUnlocked.value = false
+  }
+
   if (isAdminUnlocked.value) {
     const loaded = await loadAdminData({ relockOnAuthFailure: true })
     if (!loaded) {

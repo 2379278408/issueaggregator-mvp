@@ -8,10 +8,20 @@ from secrets import compare_digest
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
+from ..auth import (
+    _resolve_client_ip,
+    _write_audit_event,
+    check_login_cooldown,
+    hash_session_token,
+    require_admin_session,
+    verify_admin_credentials,
+)
 from ..config import get_settings
 from ..models import (
+    AdminLoginPayload,
+    AdminSessionStatus,
     BATCH_ID_PATTERN,
     DRAFT_ID_PATTERN,
     FEEDBACK_ID_PATTERN,
@@ -20,8 +30,11 @@ from ..models import (
     DraftUpdatePayload,
     FeedbackCreatePayload,
     FeedbackStatus,
+    new_session_token,
 )
 from ..repositories import (
+    AdminLoginAttemptRepository,
+    AdminSessionRepository,
     DraftBatchService,
     DraftIntegrationService,
     DraftRepository,
@@ -46,6 +59,8 @@ draft_batch_service = DraftBatchService()
 draft_integration_service = DraftIntegrationService()
 draft_repository = DraftRepository()
 draft_submission_service = DraftSubmissionService()
+admin_session_repository = AdminSessionRepository()
+admin_login_attempt_repository = AdminLoginAttemptRepository()
 
 
 def _normalized_origin_value(value: str | None) -> str | None:
@@ -86,30 +101,6 @@ def _enforce_public_feedback_origin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Origin is not allowed")
 
 
-def require_admin_token(request: Request, x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")) -> None:
-    client_ip = _client_ip(request) or "unknown"
-    if not settings.admin_api_token:
-        event_id, recent_count = _record_audit_event("admin_auth_failed", client_ip, request.url.path)
-        logger.warning(
-            "admin_auth_failed event_id=%s path=%s client_ip=%s reason=token_not_configured recent_count=%s",
-            event_id,
-            request.url.path,
-            client_ip,
-            recent_count,
-        )
-        raise HTTPException(status_code=503, detail="Admin API token is not configured")
-    if not x_admin_token or not compare_digest(x_admin_token, settings.admin_api_token):
-        event_id, recent_count = _record_audit_event("admin_auth_failed", client_ip, request.url.path)
-        logger.warning(
-            "admin_auth_failed event_id=%s path=%s client_ip=%s reason=invalid_token recent_count=%s",
-            event_id,
-            request.url.path,
-            client_ip,
-            recent_count,
-        )
-        raise HTTPException(status_code=401, detail="Invalid admin token")
-
-
 def _record_audit_event(event_type: str, client_ip: str, path: str, *, action: str | None = None, resource_id: str | None = None) -> tuple[str, int]:
     event_id = uuid4().hex[:12]
     now = datetime.now(timezone.utc)
@@ -144,6 +135,159 @@ def _log_admin_action(request: Request, *, action: str, resource_id: str | None 
         resource_id or "-",
         recent_count,
     )
+
+
+session_router = APIRouter(
+    prefix=f"{settings.api_base_path}/admin/{settings.admin_api_namespace}/session",
+    tags=["admin-session"],
+)
+
+
+@session_router.post("/login")
+def admin_login(payload: AdminLoginPayload, request: Request, response: Response) -> dict[str, object]:
+    client_ip = _resolve_client_ip(request) or "unknown"
+    path = request.url.path
+
+    on_cooldown, cooldown_reason = check_login_cooldown(client_ip)
+    if on_cooldown:
+        admin_login_attempt_repository.record_attempt(
+            username=payload.username,
+            client_ip=client_ip,
+            result=AdminLoginAttemptRepository.LOGIN_RESULT_COOLDOWN,
+            reason=cooldown_reason,
+        )
+        _write_audit_event("admin_auth_failed", client_ip, path, action="login_cooldown")
+        return error_response("ADMIN_LOGIN_COOLDOWN_ACTIVE", cooldown_reason or "Login cooldown active")
+
+    if not verify_admin_credentials(payload.username, payload.password):
+        admin_login_attempt_repository.record_attempt(
+            username=payload.username,
+            client_ip=client_ip,
+            result=AdminLoginAttemptRepository.LOGIN_RESULT_FAILURE,
+            reason="invalid_credentials",
+        )
+        _write_audit_event("admin_auth_failed", client_ip, path, action="invalid_credentials")
+        return error_response("AUTH_INVALID_CREDENTIALS", "Invalid username or password")
+
+    settings = get_settings()
+    session_token = new_session_token()
+    session_token_hash = hash_session_token(session_token)
+    user_agent_summary = _normalize_query(request.headers.get("user-agent", ""), max_length=255)
+
+    session = admin_session_repository.create_session(
+        session_token_hash=session_token_hash,
+        username=settings.admin_username or payload.username,
+        client_ip=client_ip,
+        user_agent_summary=user_agent_summary,
+    )
+
+    admin_login_attempt_repository.record_attempt(
+        username=payload.username,
+        client_ip=client_ip,
+        result=AdminLoginAttemptRepository.LOGIN_RESULT_SUCCESS,
+    )
+    _write_audit_event("admin_auth_succeeded", client_ip, path, action="login", resource_id=session.id)
+
+    response.set_cookie(
+        key=settings.admin_session_cookie_name,
+        value=session_token,
+        httponly=True,
+        secure=settings.app_env in {"production", "prod"},
+        samesite="strict",
+        path=f"{settings.api_base_path}/admin",
+        max_age=settings.admin_session_max_hours * 3600,
+    )
+
+    return success_response(
+        {
+            "username": session.username,
+            "session_expires_at": session.absolute_expires_at,
+            "idle_expires_at": session.idle_expires_at,
+        }
+    )
+
+
+@session_router.get("/me")
+def admin_session_me(request: Request) -> dict[str, object]:
+    settings = get_settings()
+    session_token = request.cookies.get(settings.admin_session_cookie_name)
+
+    if not session_token:
+        return success_response(AdminSessionStatus(authenticated=False).model_dump())
+
+    session_token_hash = hash_session_token(session_token)
+    session = admin_session_repository.find_active_session(session_token_hash)
+
+    if session is None:
+        return success_response(AdminSessionStatus(authenticated=False).model_dump())
+
+    admin_session_repository.touch_session(session_token_hash)
+    status = AdminSessionStatus(
+        authenticated=True,
+        username=session.username,
+        session_expires_at=session.absolute_expires_at,
+        idle_expires_at=session.idle_expires_at,
+    )
+    return success_response(status.model_dump())
+
+
+@session_router.post("/logout")
+def admin_logout(request: Request, response: Response) -> dict[str, object]:
+    settings = get_settings()
+    session_token = request.cookies.get(settings.admin_session_cookie_name)
+    client_ip = _resolve_client_ip(request) or "unknown"
+
+    if session_token:
+        session_token_hash = hash_session_token(session_token)
+        session = admin_session_repository.find_by_token_hash(session_token_hash)
+        if session and not session.revoked_at:
+            admin_session_repository.revoke_session(session_token_hash)
+            _write_audit_event("admin_session_revoked", client_ip, request.url.path, action="logout", resource_id=session.id)
+
+    response.delete_cookie(
+        key=settings.admin_session_cookie_name,
+        path=f"{settings.api_base_path}/admin",
+    )
+    return success_response({"status": "logged_out"})
+
+
+def require_admin_token(request: Request, x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")) -> None:
+    client_ip = _client_ip(request) or "unknown"
+    path = request.url.path
+
+    cookies = getattr(request, "cookies", {})
+    session_token = cookies.get(settings.admin_session_cookie_name) if isinstance(cookies, dict) else None
+    if session_token:
+        session_token_hash = hash_session_token(session_token)
+        session = admin_session_repository.find_active_session(session_token_hash)
+        if session is not None:
+            admin_session_repository.touch_session(session_token_hash)
+            return
+
+    if settings.admin_api_token and x_admin_token:
+        if compare_digest(x_admin_token, settings.admin_api_token):
+            return
+
+    if not settings.admin_api_token and not settings.admin_password_hash:
+        event_id, recent_count = _record_audit_event("admin_auth_failed", client_ip, path)
+        logger.warning(
+            "admin_auth_failed event_id=%s path=%s client_ip=%s reason=token_not_configured recent_count=%s",
+            event_id,
+            path,
+            client_ip,
+            recent_count,
+        )
+        raise HTTPException(status_code=503, detail="Admin API token is not configured")
+
+    event_id, recent_count = _record_audit_event("admin_auth_failed", client_ip, path)
+    logger.warning(
+        "admin_auth_failed event_id=%s path=%s client_ip=%s reason=invalid_token recent_count=%s",
+        event_id,
+        path,
+        client_ip,
+        recent_count,
+    )
+    raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
 admin_router = APIRouter(
@@ -185,7 +329,7 @@ def _normalize_feedback_type(value: str | None) -> str | None:
 
 def _normalize_audit_event_type(value: str | None) -> str | None:
     normalized = _normalize_query(value, max_length=64)
-    if normalized and normalized not in {"admin_auth_failed", "admin_action_succeeded"}:
+    if normalized and normalized not in {"admin_auth_failed", "admin_auth_succeeded", "admin_action_succeeded", "admin_session_revoked"}:
         raise HTTPException(status_code=400, detail="Invalid audit event type")
     return normalized
 

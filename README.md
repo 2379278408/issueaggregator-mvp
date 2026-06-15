@@ -62,7 +62,17 @@ AI_MODEL=<optional>
 DATABASE_URL=sqlite:////workspace/backend/data/issue_aggregator.db
 API_BASE_PATH=/api
 ADMIN_API_NAMESPACE=workbench
-ADMIN_API_TOKEN=<admin-token>
+ADMIN_ROUTE_SLUG=<8-64-char-lowercase-alnum-slug>
+ADMIN_USERNAME=<admin-username>
+ADMIN_PASSWORD_HASH=<sha256-password-hash>
+ADMIN_SESSION_SECRET=<random-session-secret>
+ADMIN_SESSION_COOKIE_NAME=ia_admin_session
+ADMIN_SESSION_IDLE_MINUTES=120
+ADMIN_SESSION_MAX_HOURS=24
+ADMIN_LOGIN_FAILURE_LIMIT=5
+ADMIN_LOGIN_FAILURE_WINDOW_MINUTES=15
+ADMIN_LOGIN_COOLDOWN_MINUTES=30
+ADMIN_API_TOKEN=<optional-legacy-token>
 ENABLE_API_DOCS=false
 RATE_LIMIT_PER_HOUR=20
 RELATED_ID_RATE_LIMIT_WINDOW=24
@@ -76,7 +86,9 @@ PUBLIC_FEEDBACK_DUPLICATE_WINDOW_MINUTES=10
 
 - 管理接口默认收口到 `/api/admin/workbench/*`
 - `ADMIN_API_NAMESPACE` 用于管理路由分组与隔离前后台路径
-- 管理接口要求请求头 `X-Admin-Token` 与 `ADMIN_API_TOKEN` 匹配
+- `ADMIN_ROUTE_SLUG` 用于管理后台前端入口路径，默认值为 `adminconsole`
+- 管理后台主认证方式为用户名密码登录后写入 `HttpOnly` Session Cookie
+- `ADMIN_API_TOKEN` 仍可作为迁移期兼容鉴权方式保留
 - 生产部署仍建议通过网关或反向代理限制 `/api/admin/*` 的访问入口
 - 生产环境默认关闭 FastAPI 文档页，只有在 `ENABLE_API_DOCS=true` 时才暴露 `/docs`
 - 未显式配置 `DATABASE_URL` 时，默认库文件会按 `APP_ENV` 分流：开发态写入 `backend/data/issue_aggregator.dev.db`，演示态写入 `backend/data/issue_aggregator.<env>.db`，生产态写入 `backend/data/issue_aggregator.db`
@@ -116,6 +128,7 @@ npm test
 VITE_API_BASE_PATH=/api
 VITE_API_PROXY_TARGET=http://localhost:8000
 VITE_ADMIN_API_NAMESPACE=workbench
+VITE_ADMIN_ROUTE_SLUG=<same-value-as-admin-route-slug>
 ```
 
 说明：
@@ -123,12 +136,12 @@ VITE_ADMIN_API_NAMESPACE=workbench
 - `VITE_API_BASE_PATH` 需要与后端 `API_BASE_PATH` 保持一致
 - 本地开发时，Vite 代理会按 `VITE_API_BASE_PATH` 转发到 `VITE_API_PROXY_TARGET`，默认值为 `http://localhost:8000`
 - `VITE_ADMIN_API_NAMESPACE` 需要与后端 `ADMIN_API_NAMESPACE` 保持一致
-- 管理请求只会读取 `sessionStorage.issueAggregatorAdminToken` 并发送 `X-Admin-Token`
-- 管理 token 不应写入任何 `VITE_*` 前端环境变量，因为这类变量会进入前端构建产物
+- `VITE_ADMIN_ROUTE_SLUG` 需要与后端 `ADMIN_ROUTE_SLUG` 保持一致
+- 管理请求会携带浏览器 Session Cookie，并兼容旧 `X-Admin-Token` 迁移路径
 
 ### Admin workbench flow
 
-管理员工作台入口为 `/admin`，当前交互按三栏工作流组织：
+管理员工作台入口为 `/<VITE_ADMIN_ROUTE_SLUG>`，当前交互按三栏工作流组织：
 
 - 左栏：收件箱式反馈队列，支持 `pending`、`grouped`、`submitted` 切换
 - 中栏：聚合审阅台，展示建批建议、拆批建议和缺失信息提示
@@ -174,7 +187,7 @@ npm run build
 
 ### Troubleshooting
 
-- 管理页回到 token 输入框：先检查 `ADMIN_API_TOKEN` 与 `sessionStorage.issueAggregatorAdminToken` 是否一致，再确认请求路径是否仍为 `/api/admin/workbench/*`
+- 管理页回到登录表单：先检查 `ADMIN_USERNAME`、`ADMIN_PASSWORD_HASH`、`ADMIN_SESSION_SECRET` 是否已配置，再确认请求路径是否仍为 `/api/admin/workbench/*`
 - 本地前端看不到数据：先确认后端已在 `8000` 端口启动，再检查 `VITE_API_PROXY_TARGET` 是否仍为 `http://localhost:8000`
 - 公开反馈提交返回 `403`：先核对浏览器 `Origin` 是否与当前服务同源；跨域预览时把源站加入 `PUBLIC_FEEDBACK_ALLOWED_ORIGINS`
 - 公开反馈被快速拦截：检查是否命中 `PUBLIC_FEEDBACK_DAILY_IP_LIMIT`，或是否落在 `PUBLIC_FEEDBACK_DUPLICATE_WINDOW_MINUTES` 窗口内的重复内容规则
@@ -185,10 +198,10 @@ npm run build
 
 - Backend health check endpoint is available at `/api/health`
 - SQLite schema initialization runs on startup
-- Frontend routes `/` and `/admin` are fully wired to the MVP workflow
+- Frontend routes `/` and `/<VITE_ADMIN_ROUTE_SLUG>` are fully wired to the MVP workflow
 - Vite proxy forwards the configured `VITE_API_BASE_PATH` to `VITE_API_PROXY_TARGET`, defaulting to `http://localhost:8000`
 - Admin API endpoints are namespaced under `/api/admin/<ADMIN_API_NAMESPACE>`
-- Admin API endpoints require `X-Admin-Token`
+- Admin API endpoints accept Session Cookie authentication and keep `X-Admin-Token` as a compatibility path
 - Backend adds stronger payload length limits, duplicate ID validation, resource ID format validation, and security headers
 - Admin flow supports batch creation, draft generation, draft editing, and GitHub submission
 - Admin workbench now uses inbox queue, review decision board, and draft editor panel as the primary operating model

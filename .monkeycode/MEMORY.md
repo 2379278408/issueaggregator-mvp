@@ -53,3 +53,10 @@
 - Instructions:
   - 管理端建批与审计回归命令为 `cd backend && python3 tests/e2e_admin_batch_flow.py`。
   - GitHub 提交、历史查询和审计回归命令为 `cd backend && python3 tests/e2e_github_submit_flow.py`。
+
+[后台会话认证 E2E 命令]
+- Date: 2026-06-15
+- Context: Agent 在补后台安全升级登录态回归脚本时发现
+- Category: 测试方法
+- Instructions:
+  - 管理员登录、冷却、会话恢复和登出失效回归命令为 `cd backend && python3 tests/e2e_admin_session_flow.py`。

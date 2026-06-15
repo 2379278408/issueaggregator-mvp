@@ -5,11 +5,14 @@ import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from urllib import error, request
+from uuid import uuid4
 
 from .config import get_settings
 
 from .database import connection_context
 from .models import (
+    AdminLoginAttemptRecord,
+    AdminSessionRecord,
     DraftBatchItemRecord,
     DraftBatchRecord,
     DraftBatchStatus,
@@ -135,6 +138,9 @@ class FeedbackRepository:
             raw_content=payload.raw_content,
             expected_behavior=payload.expected_behavior,
             actual_behavior=payload.actual_behavior,
+            page_url=payload.page_url,
+            page_title=payload.page_title,
+            environment_context=payload.environment_context,
             status=FeedbackStatus.PENDING,
             created_at=utc_now_iso(),
             submitted_at=None,
@@ -144,8 +150,9 @@ class FeedbackRepository:
                 """
                 INSERT INTO feedback_items (
                     id, type, related_id, expected_behavior, actual_behavior,
+                    page_url, page_title, environment_context,
                     raw_content, status, created_at, submitted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
@@ -153,6 +160,9 @@ class FeedbackRepository:
                     record.related_id,
                     record.expected_behavior,
                     record.actual_behavior,
+                    record.page_url,
+                    record.page_title,
+                    record.environment_context,
                     record.raw_content,
                     record.status.value,
                     record.created_at,
@@ -191,6 +201,9 @@ class FeedbackRepository:
                     feedback_items.raw_content,
                     feedback_items.expected_behavior,
                     feedback_items.actual_behavior,
+                    feedback_items.page_url,
+                    feedback_items.page_title,
+                    feedback_items.environment_context,
                     feedback_items.status,
                     feedback_items.created_at,
                     feedback_items.submitted_at,
@@ -230,7 +243,19 @@ class FeedbackRepository:
         with connection_context() as connection:
             rows = connection.execute(
                 f"""
-                SELECT id, type, related_id, raw_content, expected_behavior, actual_behavior, status, created_at, submitted_at
+                SELECT
+                    id,
+                    type,
+                    related_id,
+                    raw_content,
+                    expected_behavior,
+                    actual_behavior,
+                    page_url,
+                    page_title,
+                    environment_context,
+                    status,
+                    created_at,
+                    submitted_at
                 FROM feedback_items
                 WHERE id IN ({placeholders})
                 ORDER BY created_at DESC
@@ -273,6 +298,7 @@ class FeedbackRepository:
                   AND raw_content = ?
                   AND COALESCE(expected_behavior, '') = COALESCE(?, '')
                   AND COALESCE(actual_behavior, '') = COALESCE(?, '')
+                  AND COALESCE(page_url, '') = COALESCE(?, '')
                   AND created_at >= ?
                 """,
                 (
@@ -281,6 +307,7 @@ class FeedbackRepository:
                     payload.raw_content,
                     payload.expected_behavior,
                     payload.actual_behavior,
+                    payload.page_url,
                     since_iso,
                 ),
             ).fetchone()
@@ -388,7 +415,9 @@ class DraftBatchRepository:
             rows = connection.execute(
                 """
                 SELECT feedback_items.id, feedback_items.type, feedback_items.related_id, feedback_items.raw_content,
-                       feedback_items.expected_behavior, feedback_items.actual_behavior, feedback_items.status,
+                       feedback_items.expected_behavior, feedback_items.actual_behavior,
+                       feedback_items.page_url, feedback_items.page_title, feedback_items.environment_context,
+                       feedback_items.status,
                        feedback_items.created_at, feedback_items.submitted_at
                 FROM draft_batch_items
                 JOIN feedback_items ON feedback_items.id = draft_batch_items.feedback_item_id
@@ -504,6 +533,12 @@ class DraftIntegrationService:
                 details.append(f"期望表现: {item.expected_behavior}")
             if item.actual_behavior:
                 details.append(f"实际表现: {item.actual_behavior}")
+            if item.page_title:
+                details.append(f"页面标题: {item.page_title}")
+            if item.page_url:
+                details.append(f"页面链接: {item.page_url}")
+            if item.environment_context:
+                details.append(f"运行环境: {item.environment_context}")
             lines.append("- " + " | ".join(details))
         return "\n".join(lines)
 
@@ -526,6 +561,9 @@ class DraftIntegrationService:
         for index, item in enumerate(feedback_items, start=1):
             if item.expected_behavior and item.actual_behavior:
                 steps_lines.append(f"{index}. 根据反馈 {item.id} 复现关联流程：{item.related_id}。")
+            context_fragments = self._build_context_fragments(item)
+            if context_fragments:
+                background_lines.append(f"- 反馈 {item.id} 上下文：{' | '.join(context_fragments)}")
             if item.expected_behavior:
                 expected_lines.append(f"- {item.expected_behavior}")
             else:
@@ -559,6 +597,16 @@ class DraftIntegrationService:
                 "## 原始反馈\n" + "\n".join(summary_lines),
             ]
         )
+
+    def _build_context_fragments(self, item: FeedbackRecord) -> list[str]:
+        fragments: list[str] = []
+        if item.page_title:
+            fragments.append(f"页面标题：{item.page_title}")
+        if item.page_url:
+            fragments.append(f"页面链接：{item.page_url}")
+        if item.environment_context:
+            fragments.append(f"运行环境：{item.environment_context}")
+        return fragments
 
 
 class AIIntegrationError(ValueError):
@@ -1095,3 +1143,173 @@ class DraftSubmissionService:
         for pattern in self.SENSITIVE_CONTENT_PATTERNS:
             if pattern.search(combined_content):
                 raise RepositoryError("Draft content contains sensitive credential-like content")
+
+
+class AdminSessionRepository:
+    def create_session(self, *, session_token_hash: str, username: str, client_ip: str | None, user_agent_summary: str | None) -> AdminSessionRecord:
+        from .config import get_settings
+
+        settings = get_settings()
+        now = datetime.now(timezone.utc)
+        idle_expires = now + timedelta(minutes=settings.admin_session_idle_minutes)
+        absolute_expires = now + timedelta(hours=settings.admin_session_max_hours)
+        session_id = f"sess_{uuid4().hex[:12]}"
+
+        with connection_context() as connection:
+            connection.execute(
+                """
+                INSERT INTO admin_sessions (id, session_token_hash, username, client_ip, user_agent_summary, created_at, last_seen_at, idle_expires_at, absolute_expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    session_token_hash,
+                    username,
+                    client_ip,
+                    user_agent_summary,
+                    utc_now_iso(),
+                    utc_now_iso(),
+                    idle_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                    absolute_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                ),
+            )
+        return AdminSessionRecord(
+            id=session_id,
+            session_token_hash=session_token_hash,
+            username=username,
+            client_ip=client_ip,
+            user_agent_summary=user_agent_summary,
+            created_at=utc_now_iso(),
+            last_seen_at=utc_now_iso(),
+            idle_expires_at=idle_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            absolute_expires_at=absolute_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            revoked_at=None,
+        )
+
+    def find_active_session(self, session_token_hash: str) -> AdminSessionRecord | None:
+        now_iso = utc_now_iso()
+        with connection_context() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM admin_sessions
+                WHERE session_token_hash = ?
+                  AND revoked_at IS NULL
+                  AND idle_expires_at > ?
+                  AND absolute_expires_at > ?
+                """,
+                (session_token_hash, now_iso, now_iso),
+            ).fetchone()
+        if row is None:
+            return None
+        return AdminSessionRecord(
+            id=row["id"],
+            session_token_hash=row["session_token_hash"],
+            username=row["username"],
+            client_ip=row["client_ip"],
+            user_agent_summary=row["user_agent_summary"],
+            created_at=row["created_at"],
+            last_seen_at=row["last_seen_at"],
+            idle_expires_at=row["idle_expires_at"],
+            absolute_expires_at=row["absolute_expires_at"],
+            revoked_at=row["revoked_at"],
+        )
+
+    def find_by_token_hash(self, session_token_hash: str) -> AdminSessionRecord | None:
+        with connection_context() as connection:
+            row = connection.execute(
+                "SELECT * FROM admin_sessions WHERE session_token_hash = ? LIMIT 1",
+                (session_token_hash,),
+            ).fetchone()
+        if row is None:
+            return None
+        return AdminSessionRecord(
+            id=row["id"],
+            session_token_hash=row["session_token_hash"],
+            username=row["username"],
+            client_ip=row["client_ip"],
+            user_agent_summary=row["user_agent_summary"],
+            created_at=row["created_at"],
+            last_seen_at=row["last_seen_at"],
+            idle_expires_at=row["idle_expires_at"],
+            absolute_expires_at=row["absolute_expires_at"],
+            revoked_at=row["revoked_at"],
+        )
+
+    def touch_session(self, session_token_hash: str) -> bool:
+        from .config import get_settings
+
+        settings = get_settings()
+        now_iso = utc_now_iso()
+        idle_expires = (datetime.now(timezone.utc) + timedelta(minutes=settings.admin_session_idle_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        with connection_context() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE admin_sessions
+                SET last_seen_at = ?, idle_expires_at = ?
+                WHERE session_token_hash = ?
+                  AND revoked_at IS NULL
+                  AND absolute_expires_at > ?
+                """,
+                (now_iso, idle_expires, session_token_hash, now_iso),
+            )
+        return cursor.rowcount > 0
+
+    def revoke_session(self, session_token_hash: str) -> bool:
+        now_iso = utc_now_iso()
+        with connection_context() as connection:
+            cursor = connection.execute(
+                "UPDATE admin_sessions SET revoked_at = ? WHERE session_token_hash = ? AND revoked_at IS NULL",
+                (now_iso, session_token_hash),
+            )
+        return cursor.rowcount > 0
+
+
+class AdminLoginAttemptRepository:
+    LOGIN_RESULT_SUCCESS = "success"
+    LOGIN_RESULT_FAILURE = "failure"
+    LOGIN_RESULT_COOLDOWN = "cooldown_blocked"
+
+    def record_attempt(self, *, username: str, client_ip: str | None, result: str, reason: str | None = None) -> str:
+        attempt_id = f"la_{uuid4().hex[:12]}"
+        with connection_context() as connection:
+            connection.execute(
+                """
+                INSERT INTO admin_login_attempts (id, username, client_ip, result, reason, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (attempt_id, username, client_ip, result, reason, utc_now_iso()),
+            )
+        return attempt_id
+
+    def count_recent_failures(self, *, client_ip: str, since_iso: str) -> int:
+        with connection_context() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS total FROM admin_login_attempts
+                WHERE client_ip = ? AND result = ? AND created_at >= ?
+                """,
+                (client_ip, self.LOGIN_RESULT_FAILURE, since_iso),
+            ).fetchone()
+        return int(row["total"])
+
+    def last_attempt_after(self, *, client_ip: str, since_iso: str) -> AdminLoginAttemptRecord | None:
+        with connection_context() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM admin_login_attempts
+                WHERE client_ip = ? AND created_at >= ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (client_ip, since_iso),
+            ).fetchone()
+        if row is None:
+            return None
+        return AdminLoginAttemptRecord(
+            id=row["id"],
+            username=row["username"],
+            client_ip=row["client_ip"],
+            result=row["result"],
+            reason=row["reason"],
+            created_at=row["created_at"],
+        )
