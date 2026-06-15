@@ -59,7 +59,7 @@ GITHUB_REPO_NAME=<repo-name>
 AI_API_KEY=<optional>
 AI_API_BASE_URL=<optional>
 AI_MODEL=<optional>
-DATABASE_URL=sqlite:////workspace/backend/data/issue_aggregator.db
+DATABASE_URL=sqlite:////workspace/backend/data/issue_aggregator.dev.db
 API_BASE_PATH=/api
 ADMIN_API_NAMESPACE=workbench
 ADMIN_ROUTE_SLUG=<8-64-char-lowercase-alnum-slug>
@@ -89,6 +89,7 @@ PUBLIC_FEEDBACK_DUPLICATE_WINDOW_MINUTES=10
 - `ADMIN_ROUTE_SLUG` 用于管理后台前端入口路径，默认值为 `adminconsole`
 - 管理后台主认证方式为用户名密码登录后写入 `HttpOnly` Session Cookie
 - `ADMIN_API_TOKEN` 仍可作为迁移期兼容鉴权方式保留
+- 本地开发若显式设置 `DATABASE_URL`，优先指向 `backend/data/issue_aggregator.dev.db` 或其他独立库文件
 - 生产部署仍建议通过网关或反向代理限制 `/api/admin/*` 的访问入口
 - 生产环境默认关闭 FastAPI 文档页，只有在 `ENABLE_API_DOCS=true` 时才暴露 `/docs`
 - 未显式配置 `DATABASE_URL` 时，默认库文件会按 `APP_ENV` 分流：开发态写入 `backend/data/issue_aggregator.dev.db`，演示态写入 `backend/data/issue_aggregator.<env>.db`，生产态写入 `backend/data/issue_aggregator.db`

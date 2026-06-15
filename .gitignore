@@ -113,6 +113,7 @@
 *.key
 
 # Local runtime databases
+backend/data/issue_aggregator.db
 backend/data/issue_aggregator.*.db
 backend/data/issue_aggregator.*.db-*
 
