@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 from uuid import uuid4
 
+import bcrypt
 from fastapi import Cookie, HTTPException, Request
 
 from .config import get_settings
@@ -74,12 +75,19 @@ def hash_session_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
 def verify_admin_password(password: str) -> bool:
     settings = get_settings()
-    if not settings.admin_password_hash:
+    stored = settings.admin_password_hash
+    if not stored:
         return False
+    if stored.startswith("$2"):
+        return bcrypt.checkpw(password.encode(), stored.encode())
     password_hash = hashlib.sha256(password.encode()).hexdigest()
-    return hmac.compare_digest(password_hash, settings.admin_password_hash)
+    return hmac.compare_digest(password_hash, stored)
 
 
 def verify_admin_credentials(username: str, password: str) -> bool:
