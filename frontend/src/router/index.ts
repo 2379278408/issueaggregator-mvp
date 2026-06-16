@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import AdminWorkbenchPage from '../pages/AdminWorkbenchPage.vue'
+import NotFoundPage from '../pages/NotFoundPage.vue'
 import UserHomePage from '../pages/UserHomePage.vue'
 
 const adminRouteSlug = (import.meta.env.VITE_ADMIN_ROUTE_SLUG as string | undefined)?.trim() || 'adminconsole'
@@ -17,6 +18,11 @@ const router = createRouter({
       path: `/${adminRouteSlug}`,
       name: 'admin-workbench',
       component: AdminWorkbenchPage,
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: NotFoundPage,
     },
   ],
 })

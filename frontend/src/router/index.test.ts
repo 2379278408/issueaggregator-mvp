@@ -23,4 +23,14 @@ describe('router config', () => {
 
     expect(legacyRoute).toBeUndefined()
   })
+
+  it('has a catch-all 404 route', async () => {
+    vi.stubEnv('VITE_ADMIN_ROUTE_SLUG', 'secretpanel')
+
+    const { default: router } = await import('./index')
+    const notFound = router.getRoutes().find((route) => route.name === 'not-found')
+
+    expect(notFound).toBeDefined()
+    expect(notFound?.path).toBe('/:pathMatch(.*)*')
+  })
 })
