@@ -23,13 +23,38 @@
     <main class="page-shell__main">
       <slot />
     </main>
+    <ToastNotification ref="toastRef" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, provide, type ComponentPublicInstance } from 'vue'
+import ToastNotification from '../common/ToastNotification.vue'
+import { TOAST_KEY } from '../../composables/useToast'
+
 defineProps<{
   title: string
   description: string
   wide?: boolean
 }>()
+
+const toastRef = ref<ComponentPublicInstance<typeof ToastNotification> | null>(null)
+
+type ToastApi = {
+  notify: (message: string) => void
+  notifySuccess: (message: string) => void
+  notifyWarning: (message: string) => void
+  notifyError: (message: string) => void
+  dismiss: (id: number) => void
+}
+
+const toastApi: ToastApi = {
+  notify: (message: string) => toastRef.value?.notify(message),
+  notifySuccess: (message: string) => toastRef.value?.notifySuccess(message),
+  notifyWarning: (message: string) => toastRef.value?.notifyWarning(message),
+  notifyError: (message: string) => toastRef.value?.notifyError(message),
+  dismiss: (id: number) => toastRef.value?.dismiss(id),
+}
+
+provide(TOAST_KEY, toastApi)
 </script>
