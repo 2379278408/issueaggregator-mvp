@@ -100,26 +100,16 @@
                 </div>
               </div>
 
-              <section class="duplicate-panel duplicate-panel--inline" :class="`duplicate-panel--${duplicateStateTone}`">
-                <div class="studio-section-head studio-section-head--compact">
-                  <div>
-                    <span>Duplicate</span>
-                    <h3>{{ duplicateIssues.length ? duplicatePanelTitle : '查重' }}</h3>
-                  </div>
-                </div>
-                <div class="duplicate-panel__status">
-                  <span class="duplicate-panel__badge">{{ duplicateStatusLabel }}</span>
-                  <strong>{{ duplicateActionTitle }}</strong>
-                </div>
-                <p v-if="duplicateIssues.length">{{ duplicateSummary }}</p>
-                <p v-else>{{ duplicateHint }}</p>
-                <p class="duplicate-panel__recommendation">{{ duplicateActionHint }}</p>
-                <ul v-if="duplicateIssues.length" class="duplicate-list duplicate-list--studio">
-                  <li v-for="issue in duplicateIssues" :key="issue.issue_number">
-                    <a :href="issue.issue_url" target="_blank" rel="noreferrer">#{{ issue.issue_number }} {{ issue.title }}</a>
-                  </li>
-                </ul>
-              </section>
+              <DuplicatePanel
+                :issues="duplicateIssues"
+                :tone="duplicateStateTone"
+                :title="duplicatePanelTitle"
+                :status-label="duplicateStatusLabel"
+                :action-title="duplicateActionTitle"
+                :summary="duplicateSummary"
+                :hint="duplicateHint"
+                :action-hint="duplicateActionHint"
+              />              
             </div>
             </section>
 
@@ -202,24 +192,13 @@
             </section>
 
             <div v-if="submitMessage" class="feedback-message field--full">{{ submitMessage }}</div>
-            <section v-if="lastSubmission" class="submission-summary-card" aria-label="最近一次提交摘要">
-              <div>
-                <span class="submission-summary-card__eyebrow">最近一次提交</span>
-                <strong>{{ lastSubmission.related_id }}</strong>
-                <p>
-                  {{ lastSubmission.typeLabel }}反馈已进入待整理队列，反馈编号 {{ lastSubmission.id }}。
-                  <span v-if="lastSubmission.created_at">提交时间 {{ lastSubmission.created_at }}</span>
-                </p>
-              </div>
-              <div class="submission-summary-card__actions">
-                <button class="button button--quiet button--compact" type="button" @click="copyRelatedId">
-                  {{ copyStateLabel }}
-                </button>
-                <button class="button button--secondary button--compact" type="button" @click="viewRelatedHistory">
-                  查看同标识历史
-                </button>
-              </div>
-            </section>
+            <SubmissionSummaryCard
+              v-if="lastSubmission"
+              :submission="lastSubmission"
+              :copy-label="copyStateLabel"
+              @copy-related="copyRelatedId"
+              @view-history="viewRelatedHistory"
+            />
             <div class="composer-actions">
               <span>
                 {{ submissionReadinessText }}
@@ -230,70 +209,25 @@
           </form>
         </article>
 
-          <aside class="intake-inspector">
-            <section class="intake-checklist-panel">
-              <div class="inspector-section-head">
-                <span>Readiness</span>
-                <strong>提交前检查</strong>
-              </div>
-              <div class="intake-checklist">
-                <article class="intake-checklist__item" :class="{ 'is-ready': Boolean(form.type) }">
-                  <strong>类型</strong>
-                <span>{{ selectedTypeLabel || '待选择' }}</span>
-              </article>
-              <article class="intake-checklist__item" :class="{ 'is-ready': hasValidRelatedId }">
-                <strong>标识</strong>
-                <span>{{ normalizedRelatedId || '待输入' }}</span>
-              </article>
-              <article class="intake-checklist__item" :class="{ 'is-ready': Boolean(form.raw_content.trim()) }">
-                <strong>正文</strong>
-                <span>{{ form.raw_content.trim() ? '已填写核心描述' : '待填写' }}</span>
-              </article>
-              <article class="intake-checklist__item" :class="{ 'is-ready': hasContextInfo }">
-                <strong>上下文</strong>
-                <span>{{ hasContextInfo ? contextSummaryText : '已留空' }}</span>
-              </article>
-            </div>
-          </section>
-
-            <section class="history-panel">
-              <div class="studio-section-head">
-                <div>
-                  <span>History</span>
-                  <h3>历史记录</h3>
-                </div>
-                <p>{{ historySummaryTitle }}</p>
-              </div>
-              <div class="history-search">
-                <input v-model="filters.keyword" class="input" placeholder="搜索标识或关键词" />
-              <select v-model="filters.type" class="select">
-                <option value="all">全部</option>
-                <option value="bug">缺陷</option>
-                <option value="feature">新功能</option>
-                <option value="enhancement">优化</option>
-                <option value="question">问题</option>
-              </select>
-              <button class="button button--quiet" type="button" @click="loadSubmittedIssues">搜索</button>
-              </div>
-              <div class="history-inline-summary">{{ historySummaryHint }}</div>
-              <div v-if="historyMessage" class="feedback-message feedback-message--subtle">{{ historyMessage }}</div>
-            <div class="history-list">
-              <article v-for="issue in submittedIssues" :key="issue.issue_number" class="history-card">
-                <div class="history-card__meta">
-                  <span class="history-card__type">{{ getTypeLabel(issue.type) }}</span>
-                  <strong class="history-card__number">#{{ issue.issue_number }}</strong>
-                </div>
-                <a :href="issue.issue_url" target="_blank" rel="noreferrer">{{ issue.title }}</a>
-                <span class="history-card__related">{{ issue.related_id }}</span>
-              </article>
-              <div v-if="!submittedIssues.length && !issuesLoading" class="empty-state">
-                <strong class="empty-state__title">{{ historyEmptyTitle }}</strong>
-                <span class="empty-state__hint">{{ historyEmptyHint }}</span>
-              </div>
-              <div v-if="issuesLoading" class="empty-state empty-state--loading">正在加载...</div>
-            </div>
-          </section>
-        </aside>
+          <IntakeInspector
+            :type="form.type"
+            :type-label="selectedTypeLabel"
+            :has-valid-related-id="hasValidRelatedId"
+            :normalized-related-id="normalizedRelatedId"
+            :raw-content="form.raw_content.trim()"
+            :has-context="hasContextInfo"
+            :context-summary="contextSummaryText"
+            :issues="submittedIssues"
+            :loading="issuesLoading"
+            :history-message="historyMessage"
+            :history-summary-title="historySummaryTitle"
+            :history-summary-hint="historySummaryHint"
+            :empty-title="historyEmptyTitle"
+            :empty-hint="historyEmptyHint"
+            :keyword="filters.keyword"
+            :type-filter="filters.type"
+            @search="(k: string, t: string) => { filters.keyword = k; filters.type = t as any; loadSubmittedIssues() }"
+          />
       </section>
     </section>
   </AppShell>
@@ -303,6 +237,10 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
 import AppShell from '../components/layout/AppShell.vue'
+import DuplicatePanel from '../components/common/DuplicatePanel.vue'
+import SubmissionSummaryCard from '../components/common/SubmissionSummaryCard.vue'
+import IntakeInspector from '../components/common/IntakeInspector.vue'
+import { getTypeLabel } from '../components/common/IntakeInspector.utils'
 import {
   apiGet,
   apiPost,
@@ -312,14 +250,6 @@ import {
   type PaginatedResponse,
   type SubmittedIssue,
 } from '../services/api'
-
-const typeLabelMap: Record<string, string> = {
-  bug: '缺陷',
-  feature: '新功能',
-  enhancement: '优化',
-  question: '问题',
-  mixed: '混合',
-}
 
 const feedbackTypeOptions = [
   { value: 'bug', label: '缺陷', description: '功能异常、报错、结果不符合预期' },
@@ -415,7 +345,6 @@ const contextSummaryText = computed(() => {
   return segments.length ? segments.join(' / ') : '当前未附加上下文'
 })
 const hasHistoryFilters = computed(() => Boolean(filters.keyword.trim()) || filters.type !== 'all')
-const historySectionHint = computed(() => (hasHistoryFilters.value ? '按关键词或类型缩小结果范围。' : '查看最近聚合后的 GitHub Issue。'))
 const historySummaryTitle = computed(() => {
   if (issuesLoading.value) {
     return '正在刷新历史记录'
@@ -581,10 +510,6 @@ function normalizeRelatedId(value: string): string {
 
 function isValidRelatedId(value: string): boolean {
   return relatedIdPattern.test(value)
-}
-
-function getTypeLabel(type: string): string {
-  return typeLabelMap[type] || type
 }
 
 function normalizePageUrl(value: string): string {
