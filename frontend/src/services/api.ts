@@ -120,7 +120,10 @@ export type AdminLoginResult = {
   idle_expires_at: string
 }
 
-const publicApiBasePath = ((import.meta.env.VITE_API_BASE_PATH as string | undefined)?.trim() || '/api').replace(/\/$/, '')
+const publicApiBasePath = ((import.meta.env.VITE_API_BASE_PATH as string | undefined)?.trim() || '/api').replace(
+  /\/$/,
+  '',
+)
 const adminNamespace = (import.meta.env.VITE_ADMIN_API_NAMESPACE as string | undefined)?.trim() || 'workbench'
 const adminApiBasePath = `${publicApiBasePath}/admin/${adminNamespace}`
 const adminTokenStorageKey = 'issueAggregatorAdminToken'
@@ -230,10 +233,10 @@ export async function apiPut<TResponse, TPayload>(path: string, payload: TPayloa
 }
 
 export async function adminLogin(username: string, password: string): Promise<ApiEnvelope<AdminLoginResult>> {
-  return apiPost<AdminLoginResult, { username: string; password: string }>(
-    buildAdminApiPath('/session/login'),
-    { username, password },
-  )
+  return apiPost<AdminLoginResult, { username: string; password: string }>(buildAdminApiPath('/session/login'), {
+    username,
+    password,
+  })
 }
 
 export async function adminSessionMe(): Promise<ApiEnvelope<AdminSessionStatus>> {
@@ -247,11 +250,7 @@ export async function adminLogout(): Promise<ApiEnvelope<{ status: string }>> {
   )
 }
 
-export function buildSubmittedIssueSearch(params: {
-  related_id?: string
-  type?: string
-  keyword?: string
-}): string {
+export function buildSubmittedIssueSearch(params: { related_id?: string; type?: string; keyword?: string }): string {
   const searchParams = new URLSearchParams()
 
   if (params.related_id) {

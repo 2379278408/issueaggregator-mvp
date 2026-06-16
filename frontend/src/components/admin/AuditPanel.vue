@@ -52,7 +52,12 @@
         :disabled="loading"
         @keydown.enter.prevent="$emit('applyKeyword', localKeyword)"
       />
-      <button class="button button--quiet button--compact" type="button" :disabled="loading" @click="$emit('applyKeyword', localKeyword)">
+      <button
+        class="button button--quiet button--compact"
+        type="button"
+        :disabled="loading"
+        @click="$emit('applyKeyword', localKeyword)"
+      >
         检索
       </button>
     </div>
@@ -107,9 +112,12 @@ defineEmits<{
 
 const localKeyword = ref(props.keywordInput)
 
-watch(() => props.keywordInput, (value) => {
-  localKeyword.value = value
-})
+watch(
+  () => props.keywordInput,
+  (value) => {
+    localKeyword.value = value
+  },
+)
 
 function getEventLabel(event: AuditEventRecord): string {
   if (event.event_type === 'admin_auth_failed') return '管理员鉴权失败'

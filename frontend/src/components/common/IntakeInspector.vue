@@ -42,7 +42,9 @@
           <option value="enhancement">优化</option>
           <option value="question">问题</option>
         </select>
-        <button class="button button--quiet" type="button" @click="$emit('search', keywordModel, typeFilterModel)">搜索</button>
+        <button class="button button--quiet" type="button" @click="$emit('search', keywordModel, typeFilterModel)">
+          搜索
+        </button>
       </div>
       <div class="history-inline-summary">{{ historySummaryHint }}</div>
       <div v-if="historyMessage" class="feedback-message feedback-message--subtle">{{ historyMessage }}</div>
@@ -55,19 +57,20 @@
           <a :href="issue.issue_url" target="_blank" rel="noreferrer">{{ issue.title }}</a>
           <span class="history-card__related">{{ issue.related_id }}</span>
         </article>
+        <SkeletonLoader v-if="loading" variant="list" :rows="3" />
         <div v-if="!issues.length && !loading" class="empty-state">
           <strong class="empty-state__title">{{ emptyTitle }}</strong>
           <span class="empty-state__hint">{{ emptyHint }}</span>
         </div>
-        <div v-if="loading" class="empty-state empty-state--loading">正在加载...</div>
       </div>
     </section>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import type { SubmittedIssue } from '../../services/api'
+import SkeletonLoader from './SkeletonLoader.vue'
 import { getTypeLabel } from './IntakeInspector.utils'
 
 const props = defineProps<{
@@ -89,13 +92,23 @@ const props = defineProps<{
   typeFilter: string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   search: [keyword: string, typeFilter: string]
 }>()
 
 const keywordModel = ref(props.keyword)
 const typeFilterModel = ref(props.typeFilter)
 
-watch(() => props.keyword, (v) => { keywordModel.value = v })
-watch(() => props.typeFilter, (v) => { typeFilterModel.value = v })
+watch(
+  () => props.keyword,
+  (v) => {
+    keywordModel.value = v
+  },
+)
+watch(
+  () => props.typeFilter,
+  (v) => {
+    typeFilterModel.value = v
+  },
+)
 </script>

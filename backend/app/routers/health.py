@@ -6,16 +6,16 @@ from ..config import get_settings
 from ..responses import success_response
 
 settings = get_settings()
-router = APIRouter(prefix=settings.api_base_path, tags=["health"])
+router = APIRouter(prefix=settings.api_base_path, tags=['health'])
 
 
-@router.get("/health")
+@router.get('/health')
 def health_check() -> dict[str, object]:
     settings = get_settings()
     return success_response(
         {
-            "status": "ok",
-            "service": settings.app_name,
-            "environment": settings.app_env,
+            'status': 'ok',
+            'service': settings.app_name,
+            'environment': settings.app_env,
         }
     )

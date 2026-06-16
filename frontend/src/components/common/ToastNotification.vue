@@ -91,7 +91,9 @@ defineExpose({ notify, notifySuccess, notifyWarning, notifyError, dismiss })
   cursor: pointer;
   font-size: 14px;
   line-height: 1.5;
-  transition: opacity 0.25s, transform 0.25s;
+  transition:
+    opacity 0.25s,
+    transform 0.25s;
 }
 
 .toast__icon {

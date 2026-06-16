@@ -41,7 +41,15 @@ vi.mock('../services/api', () => ({
 function mountPage(options: { unlocked?: boolean } = { unlocked: true }) {
   if (options.unlocked !== false) {
     window.sessionStorage.setItem('issueAggregatorAdminToken', 'session-active')
-    adminSessionMe.mockResolvedValue({ success: true, data: { authenticated: true, username: 'admin', session_expires_at: '2030-01-01T00:00:00Z', idle_expires_at: '2030-01-01T00:00:00Z' } })
+    adminSessionMe.mockResolvedValue({
+      success: true,
+      data: {
+        authenticated: true,
+        username: 'admin',
+        session_expires_at: '2030-01-01T00:00:00Z',
+        idle_expires_at: '2030-01-01T00:00:00Z',
+      },
+    })
   }
 
   return mount(AdminWorkbenchPage, {
@@ -71,7 +79,10 @@ describe('AdminWorkbenchPage', () => {
     routerReplace.mockReset()
     Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
     apiGet.mockResolvedValue({ success: true, data: { items: [], page: 1, page_size: 20, total: 0 } })
-    adminSessionMe.mockResolvedValue({ success: true, data: { authenticated: false, username: null, session_expires_at: null, idle_expires_at: null } })
+    adminSessionMe.mockResolvedValue({
+      success: true,
+      data: { authenticated: false, username: null, session_expires_at: null, idle_expires_at: null },
+    })
   })
 
   it('keeps admin data locked until login succeeds', async () => {
@@ -86,7 +97,10 @@ describe('AdminWorkbenchPage', () => {
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
-    adminLogin.mockResolvedValueOnce({ success: true, data: { username: 'admin', session_expires_at: '2030-01-01T00:00:00Z', idle_expires_at: '2030-01-01T00:00:00Z' } })
+    adminLogin.mockResolvedValueOnce({
+      success: true,
+      data: { username: 'admin', session_expires_at: '2030-01-01T00:00:00Z', idle_expires_at: '2030-01-01T00:00:00Z' },
+    })
 
     const inputs = wrapper.findAll('input')
     await inputs[0].setValue('admin')
@@ -117,7 +131,11 @@ describe('AdminWorkbenchPage', () => {
   })
 
   it('shows the cooldown message when admin login is temporarily blocked', async () => {
-    adminLogin.mockResolvedValue({ success: false, error_code: 'ADMIN_LOGIN_COOLDOWN_ACTIVE', message: '登录冷却中，请 29m 59s 后再试。' })
+    adminLogin.mockResolvedValue({
+      success: false,
+      error_code: 'ADMIN_LOGIN_COOLDOWN_ACTIVE',
+      message: '登录冷却中，请 29m 59s 后再试。',
+    })
 
     const wrapper = mountPage({ unlocked: false })
     await flushPromises()
@@ -134,8 +152,36 @@ describe('AdminWorkbenchPage', () => {
 
   it('loads feedback counts on mount', async () => {
     apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
 
     const wrapper = mountPage()
@@ -208,7 +254,9 @@ describe('AdminWorkbenchPage', () => {
     await findButtonByText(wrapper, '鉴权失败')!.trigger('click')
     await flushPromises()
 
-    expect(apiGet).toHaveBeenLastCalledWith('/api/admin/workbench/audit-events?page_size=8&event_type=admin_auth_failed')
+    expect(apiGet).toHaveBeenLastCalledWith(
+      '/api/admin/workbench/audit-events?page_size=8&event_type=admin_auth_failed',
+    )
     expect(routerReplace).toHaveBeenLastCalledWith({ query: { auditEventType: 'admin_auth_failed' } })
     expect(wrapper.text()).toContain('管理员鉴权失败')
   })
@@ -280,8 +328,12 @@ describe('AdminWorkbenchPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(apiGet).toHaveBeenLastCalledWith('/api/admin/workbench/audit-events?page_size=8&event_type=admin_action_succeeded&time_range=24h&keyword=batch_9')
-    expect((wrapper.get('input[placeholder="按 IP、路径、动作或资源检索"]').element as HTMLInputElement).value).toBe('batch_9')
+    expect(apiGet).toHaveBeenLastCalledWith(
+      '/api/admin/workbench/audit-events?page_size=8&event_type=admin_action_succeeded&time_range=24h&keyword=batch_9',
+    )
+    expect((wrapper.get('input[placeholder="按 IP、路径、动作或资源检索"]').element as HTMLInputElement).value).toBe(
+      'batch_9',
+    )
   })
 
   it('restores grouped draft context from route query on mount', async () => {
@@ -392,7 +444,21 @@ describe('AdminWorkbenchPage', () => {
 
   it('clears stale queue data when a later admin refresh fails', async () => {
     apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: false, message: 'network down' })
@@ -430,8 +496,26 @@ describe('AdminWorkbenchPage', () => {
         success: true,
         data: {
           items: [
-            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', expected_behavior: '', actual_behavior: '', status: 'pending', created_at: 'now' },
-            { id: 'fb_2', type: 'feature', related_id: 'toolbar-shortcuts', raw_content: 'two', expected_behavior: 'want', actual_behavior: '', status: 'pending', created_at: 'now' },
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              expected_behavior: '',
+              actual_behavior: '',
+              status: 'pending',
+              created_at: 'now',
+            },
+            {
+              id: 'fb_2',
+              type: 'feature',
+              related_id: 'toolbar-shortcuts',
+              raw_content: 'two',
+              expected_behavior: 'want',
+              actual_behavior: '',
+              status: 'pending',
+              created_at: 'now',
+            },
           ],
         },
       })
@@ -452,12 +536,40 @@ describe('AdminWorkbenchPage', () => {
 
   it('creates batch and integrates draft', async () => {
     apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'grouped',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({
         success: true,
@@ -518,9 +630,30 @@ describe('AdminWorkbenchPage', () => {
         success: true,
         data: {
           items: [
-            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' },
-            { id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'pending', created_at: 'now' },
-            { id: 'fb_3', type: 'bug', related_id: 'editor-copy-button', raw_content: 'three', status: 'pending', created_at: 'now' },
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'pending',
+              created_at: 'now',
+            },
+            {
+              id: 'fb_3',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'three',
+              status: 'pending',
+              created_at: 'now',
+            },
           ],
         },
       })
@@ -532,9 +665,33 @@ describe('AdminWorkbenchPage', () => {
         success: true,
         data: {
           items: [
-            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'grouped', created_at: 'now', batch_id: 'batch_multi' },
-            { id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'grouped', created_at: 'now', batch_id: 'batch_multi' },
-            { id: 'fb_3', type: 'bug', related_id: 'editor-copy-button', raw_content: 'three', status: 'grouped', created_at: 'now', batch_id: 'batch_multi' },
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_multi',
+            },
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_multi',
+            },
+            {
+              id: 'fb_3',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'three',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_multi',
+            },
           ],
         },
       })
@@ -618,7 +775,21 @@ describe('AdminWorkbenchPage', () => {
 
   it('recovers when batch creation rejects', async () => {
     apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
     apiPost.mockRejectedValue(new Error('network down'))
@@ -640,8 +811,22 @@ describe('AdminWorkbenchPage', () => {
         success: true,
         data: {
           items: [
-            { id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' },
-            { id: 'fb_2', type: 'bug', related_id: 'editor-copy-button', raw_content: 'two', status: 'pending', created_at: 'now' },
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'pending',
+              created_at: 'now',
+            },
           ],
         },
       })
@@ -655,7 +840,9 @@ describe('AdminWorkbenchPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('已选 2 / 2')
-    expect(wrapper.findAll('input[type="checkbox"]').every((checkbox) => (checkbox.element as HTMLInputElement).checked)).toBe(true)
+    expect(
+      wrapper.findAll('input[type="checkbox"]').every((checkbox) => (checkbox.element as HTMLInputElement).checked),
+    ).toBe(true)
   }, 10000)
 
   it('resumes a failed grouped batch and regenerates a draft', async () => {
@@ -708,7 +895,10 @@ describe('AdminWorkbenchPage', () => {
 
     await findButtonByText(wrapper, '草稿中')!.trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((button) => button.text().includes('editor-copy-button'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('editor-copy-button'))!
+      .trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('上次生成失败')
@@ -721,12 +911,40 @@ describe('AdminWorkbenchPage', () => {
 
   it('submits loaded draft and shows submission result', async () => {
     apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'grouped',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({
         success: true,
@@ -803,12 +1021,54 @@ describe('AdminWorkbenchPage', () => {
 
   it('clears previous draft context when switching to grouped records', async () => {
     apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_1', type: 'bug', related_id: 'editor-copy-button', raw_content: 'one', status: 'pending', created_at: 'now' }] } })
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'toolbar-shortcuts', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'toolbar-shortcuts',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'toolbar-shortcuts', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'toolbar-shortcuts',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({
         success: true,
@@ -853,7 +1113,10 @@ describe('AdminWorkbenchPage', () => {
 
     await findButtonByText(wrapper, '草稿中')!.trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((button) => button.text().includes('toolbar-shortcuts'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('toolbar-shortcuts'))!
+      .trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('当前批次反馈')
@@ -865,7 +1128,21 @@ describe('AdminWorkbenchPage', () => {
   it('syncs queue context to route when switching status', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
-      .mockResolvedValueOnce({ success: true, data: { items: [{ id: 'fb_2', type: 'bug', related_id: 'toolbar-shortcuts', raw_content: 'two', status: 'grouped', created_at: 'now' }] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'toolbar-shortcuts',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
 

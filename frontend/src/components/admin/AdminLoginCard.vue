@@ -9,7 +9,13 @@
     </label>
     <label class="field field--full">
       <span>密码</span>
-      <input v-model="adminPassword" class="input" type="password" autocomplete="current-password" placeholder="********" />
+      <input
+        v-model="adminPassword"
+        class="input"
+        type="password"
+        autocomplete="current-password"
+        placeholder="********"
+      />
     </label>
     <div v-if="authMessage" class="feedback-message feedback-message--error">{{ authMessage }}</div>
     <button class="button" type="submit" :disabled="isLoggingIn">{{ isLoggingIn ? '登录中…' : '登录' }}</button>

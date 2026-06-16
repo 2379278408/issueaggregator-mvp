@@ -270,23 +270,21 @@ describe('UserHomePage', () => {
 
   it('looks up duplicate issues while typing a valid related id', async () => {
     vi.useFakeTimers()
-    apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [] } })
-      .mockResolvedValueOnce({
-        success: true,
-        data: {
-          items: [
-            {
-              issue_number: 103,
-              title: 'Typing duplicate issue',
-              issue_url: 'https://github.com/org/repo/issues/103',
-              related_id: 'test',
-              type: 'bug',
-              submitted_at: '2026-06-11T10:30:00Z',
-            },
-          ],
-        },
-      })
+    apiGet.mockResolvedValueOnce({ success: true, data: { items: [] } }).mockResolvedValueOnce({
+      success: true,
+      data: {
+        items: [
+          {
+            issue_number: 103,
+            title: 'Typing duplicate issue',
+            issue_url: 'https://github.com/org/repo/issues/103',
+            related_id: 'test',
+            type: 'bug',
+            submitted_at: '2026-06-11T10:30:00Z',
+          },
+        ],
+      },
+    })
 
     const wrapper = mount(UserHomePage, {
       global: {
@@ -460,23 +458,21 @@ describe('UserHomePage', () => {
 
   it('cancels pending debounced lookup before applying a related id example', async () => {
     vi.useFakeTimers()
-    apiGet
-      .mockResolvedValueOnce({ success: true, data: { items: [] } })
-      .mockResolvedValueOnce({
-        success: true,
-        data: {
-          items: [
-            {
-              issue_number: 106,
-              title: 'Example duplicate issue',
-              issue_url: 'https://github.com/org/repo/issues/106',
-              related_id: 'github-submit-flow',
-              type: 'bug',
-              submitted_at: '2026-06-11T10:30:00Z',
-            },
-          ],
-        },
-      })
+    apiGet.mockResolvedValueOnce({ success: true, data: { items: [] } }).mockResolvedValueOnce({
+      success: true,
+      data: {
+        items: [
+          {
+            issue_number: 106,
+            title: 'Example duplicate issue',
+            issue_url: 'https://github.com/org/repo/issues/106',
+            related_id: 'github-submit-flow',
+            type: 'bug',
+            submitted_at: '2026-06-11T10:30:00Z',
+          },
+        ],
+      },
+    })
 
     const wrapper = mount(UserHomePage, {
       global: {
@@ -521,7 +517,9 @@ describe('UserHomePage', () => {
     await wrapper.get('input[placeholder="editor-copy-button"]').trigger('blur')
     await flushPromises()
 
-    expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe('github-submit-flow')
+    expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe(
+      'github-submit-flow',
+    )
     expect(apiGet).toHaveBeenNthCalledWith(2, '/portal/issues/submitted/search?related_id=github-submit-flow')
     expect(apiGet).toHaveBeenNthCalledWith(3, '/portal/issues/submitted/search?keyword=github-submit')
   })
@@ -544,7 +542,9 @@ describe('UserHomePage', () => {
     await wrapper.get('input[placeholder="editor-copy-button"]').trigger('blur')
     await flushPromises()
 
-    expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe('github/submit-flow')
+    expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe(
+      'github/submit-flow',
+    )
     expect(apiGet.mock.calls).not.toContainEqual(['/portal/issues/submitted/search?related_id=github/submit-flow'])
   })
 
@@ -593,7 +593,9 @@ describe('UserHomePage', () => {
     await wrapper.get('button.related-id-chip').trigger('click')
     await flushPromises()
 
-    expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe('github-submit-flow')
+    expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe(
+      'github-submit-flow',
+    )
     expect(apiGet.mock.calls).toContainEqual(['/portal/issues/submitted/search?related_id=github-submit-flow'])
   })
 
@@ -614,14 +616,26 @@ describe('UserHomePage', () => {
 
     const templateButtons = wrapper.findAll('.quick-template-card')
     await templateButtons[0].trigger('click')
-    expect((wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').element as HTMLTextAreaElement).value).toContain('页面出现异常中断或卡住')
-    expect((wrapper.get('textarea[placeholder="希望系统如何表现"]').element as HTMLTextAreaElement).value).toContain('流程应当连续完成')
-    expect((wrapper.get('textarea[placeholder="现在实际发生了什么"]').element as HTMLTextAreaElement).value).toContain('执行到中间步骤时出现异常')
+    expect(
+      (wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').element as HTMLTextAreaElement).value,
+    ).toContain('页面出现异常中断或卡住')
+    expect((wrapper.get('textarea[placeholder="希望系统如何表现"]').element as HTMLTextAreaElement).value).toContain(
+      '流程应当连续完成',
+    )
+    expect((wrapper.get('textarea[placeholder="现在实际发生了什么"]').element as HTMLTextAreaElement).value).toContain(
+      '执行到中间步骤时出现异常',
+    )
 
     await templateButtons[1].trigger('click')
-    expect((wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').element as HTMLTextAreaElement).value).toContain('需要经过较多步骤')
-    expect((wrapper.get('textarea[placeholder="希望系统如何表现"]').element as HTMLTextAreaElement).value).toContain('高频操作应更直接')
-    expect((wrapper.get('textarea[placeholder="现在实际发生了什么"]').element as HTMLTextAreaElement).value).toContain('需要频繁滚动或切换视线')
+    expect(
+      (wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').element as HTMLTextAreaElement).value,
+    ).toContain('需要经过较多步骤')
+    expect((wrapper.get('textarea[placeholder="希望系统如何表现"]').element as HTMLTextAreaElement).value).toContain(
+      '高频操作应更直接',
+    )
+    expect((wrapper.get('textarea[placeholder="现在实际发生了什么"]').element as HTMLTextAreaElement).value).toContain(
+      '需要频繁滚动或切换视线',
+    )
     expect(wrapper.findAll('.quick-template-card--active')).toHaveLength(1)
   })
 
@@ -773,7 +787,9 @@ describe('UserHomePage', () => {
     await wrapper.get('button[role="radio"]').trigger('click')
     await wrapper.get('input[placeholder="editor-copy-button"]').setValue('editor-copy-button')
     await wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').setValue('feedback body')
-    await wrapper.get('input[placeholder="https://example.com/settings"]').setValue(`https://app.example.com/${'segment-'.repeat(180)}?token=secret#composer`)
+    await wrapper
+      .get('input[placeholder="https://example.com/settings"]')
+      .setValue(`https://app.example.com/${'segment-'.repeat(180)}?token=secret#composer`)
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
@@ -809,7 +825,9 @@ describe('UserHomePage', () => {
     await wrapper.get('button[role="radio"]').trigger('click')
     await wrapper.get('input[placeholder="editor-copy-button"]').setValue('editor-copy-button')
     await wrapper.get('textarea[placeholder="描述触发场景、具体表现和影响范围"]').setValue('feedback body')
-    await wrapper.get('input[placeholder="https://example.com/settings"]').setValue('mailto:support@example.com?subject=Help#draft')
+    await wrapper
+      .get('input[placeholder="https://example.com/settings"]')
+      .setValue('mailto:support@example.com?subject=Help#draft')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 

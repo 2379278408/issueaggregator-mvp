@@ -42,7 +42,13 @@
     <label class="field field--full issue-body-field">
       <span>Issue 正文</span>
       <small class="field-helper">正文按摘要、背景、期望、实际和影响展开，便于直接提交到 GitHub。</small>
-      <textarea :value="draftForm.body_markdown" class="textarea textarea--editor" rows="18" :readonly="!currentDraftId" @input="onBodyChange"></textarea>
+      <textarea
+        :value="draftForm.body_markdown"
+        class="textarea textarea--editor"
+        rows="18"
+        :readonly="!currentDraftId"
+        @input="onBodyChange"
+      ></textarea>
     </label>
 
     <div v-if="message" class="feedback-message draft-message">{{ message }}</div>
@@ -65,10 +71,20 @@
     </div>
 
     <div class="studio-actions issue-actions issue-actions--dock">
-      <button class="button button--secondary" type="button" :disabled="!activeBatchId || integratingDraft" @click="$emit('integrateDraft')">
+      <button
+        class="button button--secondary"
+        type="button"
+        :disabled="!activeBatchId || integratingDraft"
+        @click="$emit('integrateDraft')"
+      >
         {{ integratingDraft ? '生成中...' : '生成草稿' }}
       </button>
-      <button class="button button--quiet" type="button" :disabled="!currentDraftId || savingDraft" @click="$emit('saveDraft')">
+      <button
+        class="button button--quiet"
+        type="button"
+        :disabled="!currentDraftId || savingDraft"
+        @click="$emit('saveDraft')"
+      >
         {{ savingDraft ? '保存中...' : '保存草稿' }}
       </button>
       <button class="button" type="button" :disabled="!canSubmit || submittingDraft" @click="$emit('submitDraft')">

@@ -2,7 +2,9 @@ import { ref, watchEffect } from 'vue'
 
 const THEME_KEY = 'theme-preference'
 const theme = ref<'light' | 'dark'>(
-  (typeof localStorage !== 'undefined' && (localStorage.getItem(THEME_KEY) as 'light' | 'dark') === 'dark') ? 'dark' : 'light'
+  typeof localStorage !== 'undefined' && (localStorage.getItem(THEME_KEY) as 'light' | 'dark') === 'dark'
+    ? 'dark'
+    : 'light',
 )
 
 function applyTheme(value: 'light' | 'dark'): void {

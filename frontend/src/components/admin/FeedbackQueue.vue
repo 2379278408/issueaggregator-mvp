@@ -48,19 +48,39 @@
         <p>按照队列、审阅、草稿、审计的顺序推进当前处理链路。</p>
       </div>
       <div class="triage-sidebar__nav-list">
-        <button class="triage-nav-card" :class="{ 'is-active': activeSection === 'queue' }" type="button" @click="$emit('focusSection', 'queue')">
+        <button
+          class="triage-nav-card"
+          :class="{ 'is-active': activeSection === 'queue' }"
+          type="button"
+          @click="$emit('focusSection', 'queue')"
+        >
           <div><span>01</span><strong>反馈队列</strong></div>
           <small>{{ items.length }} 条</small>
         </button>
-        <button class="triage-nav-card" :class="{ 'is-active': activeSection === 'review' }" type="button" @click="$emit('focusSection', 'review')">
+        <button
+          class="triage-nav-card"
+          :class="{ 'is-active': activeSection === 'review' }"
+          type="button"
+          @click="$emit('focusSection', 'review')"
+        >
           <div><span>02</span><strong>主题判断</strong></div>
           <small>{{ reviewItemCount }} 条</small>
         </button>
-        <button class="triage-nav-card" :class="{ 'is-active': activeSection === 'draft' }" type="button" @click="$emit('focusSection', 'draft')">
+        <button
+          class="triage-nav-card"
+          :class="{ 'is-active': activeSection === 'draft' }"
+          type="button"
+          @click="$emit('focusSection', 'draft')"
+        >
           <div><span>03</span><strong>草稿编辑</strong></div>
           <small>{{ currentDraftId ? '可提交' : '待生成' }}</small>
         </button>
-        <button class="triage-nav-card" :class="{ 'is-active': activeSection === 'audit' }" type="button" @click="$emit('focusSection', 'audit')">
+        <button
+          class="triage-nav-card"
+          :class="{ 'is-active': activeSection === 'audit' }"
+          type="button"
+          @click="$emit('focusSection', 'audit')"
+        >
           <div><span>04</span><strong>审计记录</strong></div>
           <small>{{ auditEventCount }} 条</small>
         </button>
@@ -121,17 +141,18 @@
           <p>{{ excerpt(item.raw_content, 92) }}</p>
         </button>
       </section>
+      <SkeletonLoader v-if="loading" variant="list" :rows="4" show-meta />
       <div v-if="!items.length && !loading" class="empty-state">
         <strong class="empty-state__title">当前队列为空</strong>
         <span class="empty-state__hint">切换到其他状态，或等待新的反馈进入这个阶段。</span>
       </div>
-      <div v-if="loading" class="empty-state empty-state--loading">正在载入...</div>
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
 import type { FeedbackItem } from '../../services/api'
+import SkeletonLoader from '../common/SkeletonLoader.vue'
 
 export type QueueStatus = 'pending' | 'grouped' | 'submitted'
 export type AdminSection = 'queue' | 'review' | 'draft' | 'audit'

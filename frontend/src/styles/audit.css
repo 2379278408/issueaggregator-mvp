@@ -46,7 +46,10 @@
   font-size: 13px;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: border-color 0.18s, background 0.18s, color 0.18s;
+  transition:
+    border-color 0.18s,
+    background 0.18s,
+    color 0.18s;
 }
 
 .audit-filter-chip:hover,
@@ -58,7 +61,7 @@
 .audit-filter-chip.is-active {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: #0C1A12;
+  color: #0c1a12;
 }
 
 .audit-list {

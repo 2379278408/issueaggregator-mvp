@@ -6,7 +6,6 @@ from pathlib import Path
 
 from .config import get_settings
 
-
 SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS feedback_items (
@@ -24,9 +23,9 @@ SCHEMA_STATEMENTS = (
         submitted_at TEXT
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_feedback_items_status ON feedback_items(status)",
-    "CREATE INDEX IF NOT EXISTS idx_feedback_items_related_id ON feedback_items(related_id)",
-    "CREATE INDEX IF NOT EXISTS idx_feedback_items_created_at ON feedback_items(created_at)",
+    'CREATE INDEX IF NOT EXISTS idx_feedback_items_status ON feedback_items(status)',
+    'CREATE INDEX IF NOT EXISTS idx_feedback_items_related_id ON feedback_items(related_id)',
+    'CREATE INDEX IF NOT EXISTS idx_feedback_items_created_at ON feedback_items(created_at)',
     """
     CREATE TABLE IF NOT EXISTS draft_batches (
         id TEXT PRIMARY KEY,
@@ -38,8 +37,8 @@ SCHEMA_STATEMENTS = (
         updated_at TEXT NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_draft_batches_status ON draft_batches(status)",
-    "CREATE INDEX IF NOT EXISTS idx_draft_batches_primary_related_id ON draft_batches(primary_related_id)",
+    'CREATE INDEX IF NOT EXISTS idx_draft_batches_status ON draft_batches(status)',
+    'CREATE INDEX IF NOT EXISTS idx_draft_batches_primary_related_id ON draft_batches(primary_related_id)',
     """
     CREATE TABLE IF NOT EXISTS draft_batch_items (
         id TEXT PRIMARY KEY,
@@ -63,8 +62,8 @@ SCHEMA_STATEMENTS = (
         FOREIGN KEY(batch_id) REFERENCES draft_batches(id)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_drafts_batch_id ON drafts(batch_id)",
-    "CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status)",
+    'CREATE INDEX IF NOT EXISTS idx_drafts_batch_id ON drafts(batch_id)',
+    'CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status)',
     """
     CREATE TABLE IF NOT EXISTS submissions (
         id TEXT PRIMARY KEY,
@@ -80,9 +79,9 @@ SCHEMA_STATEMENTS = (
         FOREIGN KEY(draft_id) REFERENCES drafts(id)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_submissions_related_id ON submissions(related_id)",
-    "CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON submissions(submitted_at)",
-    "CREATE INDEX IF NOT EXISTS idx_submissions_github_issue_number ON submissions(github_issue_number)",
+    'CREATE INDEX IF NOT EXISTS idx_submissions_related_id ON submissions(related_id)',
+    'CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON submissions(submitted_at)',
+    'CREATE INDEX IF NOT EXISTS idx_submissions_github_issue_number ON submissions(github_issue_number)',
     """
     CREATE TABLE IF NOT EXISTS public_feedback_ip_limits (
         ip_address TEXT NOT NULL,
@@ -103,8 +102,8 @@ SCHEMA_STATEMENTS = (
         created_at TEXT NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_audit_events_type_ip_created_at ON audit_events(event_type, client_ip, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at)",
+    'CREATE INDEX IF NOT EXISTS idx_audit_events_type_ip_created_at ON audit_events(event_type, client_ip, created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at)',
     """
     CREATE TABLE IF NOT EXISTS admin_sessions (
         id TEXT PRIMARY KEY,
@@ -119,8 +118,8 @@ SCHEMA_STATEMENTS = (
         revoked_at TEXT
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_admin_sessions_token_hash ON admin_sessions(session_token_hash)",
-    "CREATE INDEX IF NOT EXISTS idx_admin_sessions_username ON admin_sessions(username)",
+    'CREATE INDEX IF NOT EXISTS idx_admin_sessions_token_hash ON admin_sessions(session_token_hash)',
+    'CREATE INDEX IF NOT EXISTS idx_admin_sessions_username ON admin_sessions(username)',
     """
     CREATE TABLE IF NOT EXISTS admin_login_attempts (
         id TEXT PRIMARY KEY,
@@ -131,18 +130,18 @@ SCHEMA_STATEMENTS = (
         created_at TEXT NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_admin_login_attempts_ip_created_at ON admin_login_attempts(client_ip, created_at)",
+    'CREATE INDEX IF NOT EXISTS idx_admin_login_attempts_ip_created_at ON admin_login_attempts(client_ip, created_at)',
 )
 
 FEEDBACK_ITEM_OPTIONAL_COLUMNS = {
-    "page_url": "TEXT",
-    "page_title": "TEXT",
-    "environment_context": "TEXT",
+    'page_url': 'TEXT',
+    'page_title': 'TEXT',
+    'environment_context': 'TEXT',
 }
 
 
 def _database_path(database_url: str) -> Path:
-    prefix = "sqlite:///"
+    prefix = 'sqlite:///'
     if database_url.startswith(prefix):
         return Path(database_url[len(prefix) :]).expanduser().resolve()
     return Path(database_url).expanduser().resolve()
@@ -165,13 +164,11 @@ def initialize_database() -> None:
 
 
 def _ensure_feedback_item_columns(connection: sqlite3.Connection) -> None:
-    existing_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(feedback_items)").fetchall()
-    }
+    existing_columns = {row['name'] for row in connection.execute('PRAGMA table_info(feedback_items)').fetchall()}
     for column_name, column_type in FEEDBACK_ITEM_OPTIONAL_COLUMNS.items():
         if column_name in existing_columns:
             continue
-        connection.execute(f"ALTER TABLE feedback_items ADD COLUMN {column_name} {column_type}")
+        connection.execute(f'ALTER TABLE feedback_items ADD COLUMN {column_name} {column_type}')
 
 
 @contextmanager

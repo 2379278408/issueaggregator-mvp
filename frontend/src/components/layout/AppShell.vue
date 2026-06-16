@@ -2,7 +2,13 @@
   <div class="page-shell" :class="{ 'page-shell--wide': wide }">
     <header class="page-shell__header">
       <div class="hero-block">
-        <a class="brand-mark" href="https://monkeycode-ai.com/" target="_blank" rel="noreferrer" aria-label="MonkeyCode 官网">
+        <a
+          class="brand-mark"
+          href="https://monkeycode-ai.com/"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="MonkeyCode 官网"
+        >
           <img src="https://monkeycode-ai.com/logo-light.png" alt="" />
           <span>MonkeyCode</span>
         </a>

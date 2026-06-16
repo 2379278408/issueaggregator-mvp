@@ -37,8 +37,8 @@ def _parse_client_ip(candidate: str | None) -> ip_address | None:
 
 def _resolve_client_ip(request: Request) -> str | None:
     settings = get_settings()
-    forwarded_header = request.headers.get("x-forwarded-for")
-    forwarded_ip = _normalize_client_ip(forwarded_header.split(",", 1)[0]) if forwarded_header else None
+    forwarded_header = request.headers.get('x-forwarded-for')
+    forwarded_ip = _normalize_client_ip(forwarded_header.split(',', 1)[0]) if forwarded_header else None
 
     if settings.trust_proxy_headers and forwarded_ip:
         return forwarded_ip
@@ -48,17 +48,23 @@ def _resolve_client_ip(request: Request) -> str | None:
     if direct_peer and direct_peer.is_global:
         return direct_ip
 
-    if direct_peer and forwarded_ip and (direct_peer.is_private or direct_peer.is_loopback or direct_peer.is_link_local):
+    if (
+        direct_peer
+        and forwarded_ip
+        and (direct_peer.is_private or direct_peer.is_loopback or direct_peer.is_link_local)
+    ):
         return forwarded_ip
 
     return None
 
 
-def _write_audit_event(event_type: str, client_ip: str, path: str, *, action: str | None = None, resource_id: str | None = None) -> tuple[str, int]:
+def _write_audit_event(
+    event_type: str, client_ip: str, path: str, *, action: str | None = None, resource_id: str | None = None
+) -> tuple[str, int]:
     audit_repo = AuditEventRepository()
     event_id = uuid4().hex[:12]
     now = datetime.now(timezone.utc)
-    since_iso = (now - _AUDIT_WINDOW).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    since_iso = (now - _AUDIT_WINDOW).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     audit_repo.create_event(
         event_id=event_id,
         event_type=event_type,
@@ -84,7 +90,7 @@ def verify_admin_password(password: str) -> bool:
     stored = settings.admin_password_hash
     if not stored:
         return False
-    if stored.startswith("$2"):
+    if stored.startswith('$2'):
         return bcrypt.checkpw(password.encode(), stored.encode())
     password_hash = hashlib.sha256(password.encode()).hexdigest()
     return hmac.compare_digest(password_hash, stored)
@@ -100,20 +106,20 @@ def verify_admin_credentials(username: str, password: str) -> bool:
 
 
 def require_admin_session(request: Request, ia_admin_session: str | None = Cookie(default=None)) -> str:
-    client_ip = _resolve_client_ip(request) or "unknown"
+    client_ip = _resolve_client_ip(request) or 'unknown'
     path = request.url.path
 
     if not ia_admin_session:
-        _write_audit_event("admin_auth_failed", client_ip, path, action="session_missing")
-        raise HTTPException(status_code=401, detail="Authentication required")
+        _write_audit_event('admin_auth_failed', client_ip, path, action='session_missing')
+        raise HTTPException(status_code=401, detail='Authentication required')
 
     session_token_hash = hash_session_token(ia_admin_session)
     session_repo = AdminSessionRepository()
     session = session_repo.find_active_session(session_token_hash)
 
     if session is None:
-        _write_audit_event("admin_auth_failed", client_ip, path, action="session_invalid_or_expired")
-        raise HTTPException(status_code=401, detail="Authentication required")
+        _write_audit_event('admin_auth_failed', client_ip, path, action='session_invalid_or_expired')
+        raise HTTPException(status_code=401, detail='Authentication required')
 
     session_repo.touch_session(session_token_hash)
     return session.username
@@ -122,18 +128,33 @@ def require_admin_session(request: Request, ia_admin_session: str | None = Cooki
 def check_login_cooldown(client_ip: str) -> tuple[bool, str | None]:
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    window_since = (now - timedelta(minutes=settings.admin_login_failure_window_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    window_since = (
+        (now - timedelta(minutes=settings.admin_login_failure_window_minutes))
+        .replace(microsecond=0)
+        .isoformat()
+        .replace('+00:00', 'Z')
+    )
 
     attempt_repo = AdminLoginAttemptRepository()
     failure_count = attempt_repo.count_recent_failures(client_ip=client_ip, since_iso=window_since)
 
     if failure_count >= settings.admin_login_failure_limit:
-        cooldown_since = (now - timedelta(minutes=settings.admin_login_cooldown_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        cooldown_since = (
+            (now - timedelta(minutes=settings.admin_login_cooldown_minutes))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
         last_attempt = attempt_repo.last_attempt_after(client_ip=client_ip, since_iso=cooldown_since)
-        if last_attempt is not None and last_attempt.result in (AdminLoginAttemptRepository.LOGIN_RESULT_FAILURE, AdminLoginAttemptRepository.LOGIN_RESULT_COOLDOWN):
-            remaining_seconds = int((now - datetime.fromisoformat(last_attempt.created_at.replace("Z", "+00:00"))).total_seconds())
+        if last_attempt is not None and last_attempt.result in (
+            AdminLoginAttemptRepository.LOGIN_RESULT_FAILURE,
+            AdminLoginAttemptRepository.LOGIN_RESULT_COOLDOWN,
+        ):
+            remaining_seconds = int(
+                (now - datetime.fromisoformat(last_attempt.created_at.replace('Z', '+00:00'))).total_seconds()
+            )
             remaining = max(0, (settings.admin_login_cooldown_minutes * 60) - remaining_seconds)
             if remaining > 0:
-                return True, f"Login cooldown active, try again in {remaining // 60}m {remaining % 60}s"
+                return True, f'Login cooldown active, try again in {remaining // 60}m {remaining % 60}s'
 
     return False, None

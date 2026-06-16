@@ -8,7 +8,6 @@ from urllib import error, request
 from uuid import uuid4
 
 from .config import get_settings
-
 from .database import connection_context
 from .models import (
     AdminLoginAttemptRecord,
@@ -74,7 +73,7 @@ class AuditEventRepository:
                 """,
                 (event_type, client_ip, since_iso),
             ).fetchone()
-        return int(row["total"])
+        return int(row['total'])
 
     def list_events(
         self,
@@ -88,28 +87,26 @@ class AuditEventRepository:
         conditions: list[str] = []
         params: list[object] = []
         if event_type:
-            conditions.append("event_type = ?")
+            conditions.append('event_type = ?')
             params.append(event_type)
         if keyword:
             conditions.append(
-                "("
-                "client_ip LIKE ? OR path LIKE ? OR COALESCE(action, '') LIKE ? OR COALESCE(resource_id, '') LIKE ?"
-                ")"
+                "(client_ip LIKE ? OR path LIKE ? OR COALESCE(action, '') LIKE ? OR COALESCE(resource_id, '') LIKE ?)"
             )
-            keyword_pattern = f"%{keyword}%"
+            keyword_pattern = f'%{keyword}%'
             params.extend([keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern])
         if since_iso:
-            conditions.append("created_at >= ?")
+            conditions.append('created_at >= ?')
             params.append(since_iso)
 
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        where_clause = f'WHERE {" AND ".join(conditions)}' if conditions else ''
         offset = (page - 1) * page_size
 
         with connection_context() as connection:
             total = connection.execute(
-                f"SELECT COUNT(*) AS total FROM audit_events {where_clause}",
+                f'SELECT COUNT(*) AS total FROM audit_events {where_clause}',
                 params,
-            ).fetchone()["total"]
+            ).fetchone()['total']
             rows = connection.execute(
                 f"""
                 SELECT id, event_type, client_ip, path, action, resource_id, created_at
@@ -122,10 +119,10 @@ class AuditEventRepository:
             ).fetchall()
 
         return {
-            "items": [dict(row) for row in rows],
-            "page": page,
-            "page_size": page_size,
-            "total": total,
+            'items': [dict(row) for row in rows],
+            'page': page,
+            'page_size': page_size,
+            'total': total,
         }
 
 
@@ -181,17 +178,17 @@ class FeedbackRepository:
         conditions: list[str] = []
         params: list[object] = []
         if status:
-            conditions.append("feedback_items.status = ?")
+            conditions.append('feedback_items.status = ?')
             params.append(status.value)
 
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        where_clause = f'WHERE {" AND ".join(conditions)}' if conditions else ''
         offset = (page - 1) * page_size
 
         with connection_context() as connection:
             total = connection.execute(
-                f"SELECT COUNT(*) AS total FROM feedback_items {where_clause}",
+                f'SELECT COUNT(*) AS total FROM feedback_items {where_clause}',
                 params,
-            ).fetchone()["total"]
+            ).fetchone()['total']
             rows = connection.execute(
                 f"""
                 SELECT
@@ -230,16 +227,16 @@ class FeedbackRepository:
             ).fetchall()
 
         return {
-            "items": [dict(row) for row in rows],
-            "page": page,
-            "page_size": page_size,
-            "total": total,
+            'items': [dict(row) for row in rows],
+            'page': page,
+            'page_size': page_size,
+            'total': total,
         }
 
     def get_feedback_by_ids(self, feedback_ids: list[str]) -> list[FeedbackRecord]:
         if not feedback_ids:
             return []
-        placeholders = ", ".join("?" for _ in feedback_ids)
+        placeholders = ', '.join('?' for _ in feedback_ids)
         with connection_context() as connection:
             rows = connection.execute(
                 f"""
@@ -267,10 +264,10 @@ class FeedbackRepository:
     def update_feedback_status(self, feedback_ids: list[str], status: FeedbackStatus) -> int:
         if not feedback_ids:
             return 0
-        placeholders = ", ".join("?" for _ in feedback_ids)
+        placeholders = ', '.join('?' for _ in feedback_ids)
         with connection_context() as connection:
             cursor = connection.execute(
-                f"UPDATE feedback_items SET status = ? WHERE id IN ({placeholders})",
+                f'UPDATE feedback_items SET status = ? WHERE id IN ({placeholders})',
                 [status.value, *feedback_ids],
             )
         return cursor.rowcount
@@ -278,11 +275,11 @@ class FeedbackRepository:
     def mark_feedback_submitted(self, feedback_ids: list[str]) -> int:
         if not feedback_ids:
             return 0
-        placeholders = ", ".join("?" for _ in feedback_ids)
+        placeholders = ', '.join('?' for _ in feedback_ids)
         submitted_at = utc_now_iso()
         with connection_context() as connection:
             cursor = connection.execute(
-                f"UPDATE feedback_items SET status = ?, submitted_at = ? WHERE id IN ({placeholders})",
+                f'UPDATE feedback_items SET status = ?, submitted_at = ? WHERE id IN ({placeholders})',
                 [FeedbackStatus.SUBMITTED.value, submitted_at, *feedback_ids],
             )
         return cursor.rowcount
@@ -311,7 +308,7 @@ class FeedbackRepository:
                     since_iso,
                 ),
             ).fetchone()
-        return int(row["total"])
+        return int(row['total'])
 
 
 class PublicFeedbackRateLimitRepository:
@@ -379,18 +376,18 @@ class DraftBatchRepository:
                 record = DraftBatchItemRecord(id=new_batch_item_id(), batch_id=batch_id, feedback_item_id=feedback_id)
                 try:
                     connection.execute(
-                        "INSERT INTO draft_batch_items (id, batch_id, feedback_item_id) VALUES (?, ?, ?)",
+                        'INSERT INTO draft_batch_items (id, batch_id, feedback_item_id) VALUES (?, ?, ?)',
                         (record.id, record.batch_id, record.feedback_item_id),
                     )
                 except sqlite3.IntegrityError as exc:
-                    raise RepositoryError(f"Feedback item already belongs to an active batch: {feedback_id}") from exc
+                    raise RepositoryError(f'Feedback item already belongs to an active batch: {feedback_id}') from exc
                 records.append(record)
         return records
 
     def get_batch(self, batch_id: str) -> DraftBatchRecord | None:
         with connection_context() as connection:
             row = connection.execute(
-                "SELECT id, status, primary_related_id, related_id_count, integration_error, created_at, updated_at FROM draft_batches WHERE id = ?",
+                'SELECT id, status, primary_related_id, related_id_count, integration_error, created_at, updated_at FROM draft_batches WHERE id = ?',
                 (batch_id,),
             ).fetchone()
         return DraftBatchRecord(**dict(row)) if row else None
@@ -405,7 +402,7 @@ class DraftBatchRepository:
         updated_at = utc_now_iso()
         with connection_context() as connection:
             connection.execute(
-                "UPDATE draft_batches SET status = ?, integration_error = ?, updated_at = ? WHERE id = ?",
+                'UPDATE draft_batches SET status = ?, integration_error = ?, updated_at = ? WHERE id = ?',
                 (status.value, integration_error, updated_at, batch_id),
             )
         return self.get_batch(batch_id)
@@ -438,11 +435,11 @@ class DraftBatchService:
         feedback_items = self.feedback_repository.get_feedback_by_ids(feedback_ids)
 
         if not feedback_items or len(feedback_items) != len(set(feedback_ids)):
-            raise RepositoryError("Selected feedback items are missing")
+            raise RepositoryError('Selected feedback items are missing')
 
         unique_related_ids = sorted({item.related_id for item in feedback_items})
         if len(unique_related_ids) > 1 and not confirm_mixed_related_ids:
-            raise RepositoryError("Mixed related_id selection requires explicit confirmation")
+            raise RepositoryError('Mixed related_id selection requires explicit confirmation')
 
         primary_related_id = unique_related_ids[0] if len(unique_related_ids) == 1 else None
         batch = self.batch_repository.create_batch(
@@ -464,16 +461,16 @@ class DraftIntegrationService:
     def integrate_batch(self, batch_id: str) -> DraftRecord:
         batch = self.batch_repository.get_batch(batch_id)
         if not batch:
-            raise RepositoryError("Draft batch not found")
+            raise RepositoryError('Draft batch not found')
 
         feedback_items = self.batch_repository.list_batch_feedback_items(batch_id)
         if not feedback_items:
             self.batch_repository.update_batch_status(
                 batch_id,
                 status=DraftBatchStatus.FAILED,
-                integration_error="Draft batch has no feedback items",
+                integration_error='Draft batch has no feedback items',
             )
-            raise RepositoryError("Draft batch has no feedback items")
+            raise RepositoryError('Draft batch has no feedback items')
 
         self.batch_repository.update_batch_status(batch_id, status=DraftBatchStatus.INTEGRATING)
         try:
@@ -491,24 +488,26 @@ class DraftIntegrationService:
 
     def _build_draft(self, batch_id: str, feedback_items: list[FeedbackRecord]) -> DraftRecord:
         related_ids = sorted({item.related_id for item in feedback_items})
-        primary_related_id = related_ids[0] if len(related_ids) == 1 else "mixed-related-ids"
+        primary_related_id = related_ids[0] if len(related_ids) == 1 else 'mixed-related-ids'
         issue_type = self._issue_type_label(feedback_items[0].type)
-        related_id_summary = ", ".join(related_ids)
+        related_id_summary = ', '.join(related_ids)
         prompt_snapshot = self._build_prompt_snapshot(feedback_items)
         if self._should_use_ai():
             try:
-                generated = self.ai_client.create_issue_draft(prompt_snapshot=prompt_snapshot, feedback_items=feedback_items)
-                title = generated["title"]
-                body_markdown = generated["body_markdown"]
+                generated = self.ai_client.create_issue_draft(
+                    prompt_snapshot=prompt_snapshot, feedback_items=feedback_items
+                )
+                title = generated['title']
+                body_markdown = generated['body_markdown']
                 ai_model = self.settings.ai_model
             except AIIntegrationError:
-                title = f"[{issue_type}] {primary_related_id}"
+                title = f'[{issue_type}] {primary_related_id}'
                 body_markdown = self._build_markdown(primary_related_id, feedback_items)
-                ai_model = "deterministic-template-v1"
+                ai_model = 'deterministic-template-v1'
         else:
-            title = f"[{issue_type}] {primary_related_id}"
+            title = f'[{issue_type}] {primary_related_id}'
             body_markdown = self._build_markdown(primary_related_id, feedback_items)
-            ai_model = "deterministic-template-v1"
+            ai_model = 'deterministic-template-v1'
         return self.draft_repository.create_draft(
             batch_id=batch_id,
             title=title,
@@ -525,34 +524,34 @@ class DraftIntegrationService:
         lines = []
         for item in feedback_items:
             details = [
-                f"类型: {self._issue_type_label(item.type)}",
-                f"关联标识: {item.related_id}",
-                f"反馈内容: {item.raw_content}",
+                f'类型: {self._issue_type_label(item.type)}',
+                f'关联标识: {item.related_id}',
+                f'反馈内容: {item.raw_content}',
             ]
             if item.expected_behavior:
-                details.append(f"期望表现: {item.expected_behavior}")
+                details.append(f'期望表现: {item.expected_behavior}')
             if item.actual_behavior:
-                details.append(f"实际表现: {item.actual_behavior}")
+                details.append(f'实际表现: {item.actual_behavior}')
             if item.page_title:
-                details.append(f"页面标题: {item.page_title}")
+                details.append(f'页面标题: {item.page_title}')
             if item.page_url:
-                details.append(f"页面链接: {item.page_url}")
+                details.append(f'页面链接: {item.page_url}')
             if item.environment_context:
-                details.append(f"运行环境: {item.environment_context}")
-            lines.append("- " + " | ".join(details))
-        return "\n".join(lines)
+                details.append(f'运行环境: {item.environment_context}')
+            lines.append('- ' + ' | '.join(details))
+        return '\n'.join(lines)
 
     def _issue_type_label(self, issue_type: str) -> str:
         return {
-            "bug": "缺陷",
-            "feature": "新功能",
-            "enhancement": "优化",
-            "question": "问题",
+            'bug': '缺陷',
+            'feature': '新功能',
+            'enhancement': '优化',
+            'question': '问题',
         }.get(issue_type, issue_type)
 
     def _build_markdown(self, primary_related_id: str, feedback_items: list[FeedbackRecord]) -> str:
-        summary_lines = [f"- {item.raw_content}" for item in feedback_items]
-        background_lines = [f"- {self._issue_type_label(item.type)}：{item.raw_content}" for item in feedback_items]
+        summary_lines = [f'- {item.raw_content}' for item in feedback_items]
+        background_lines = [f'- {self._issue_type_label(item.type)}：{item.raw_content}' for item in feedback_items]
         steps_lines = []
         expected_lines = []
         actual_lines = []
@@ -560,52 +559,52 @@ class DraftIntegrationService:
 
         for index, item in enumerate(feedback_items, start=1):
             if item.expected_behavior and item.actual_behavior:
-                steps_lines.append(f"{index}. 根据反馈 {item.id} 复现关联流程：{item.related_id}。")
+                steps_lines.append(f'{index}. 根据反馈 {item.id} 复现关联流程：{item.related_id}。')
             context_fragments = self._build_context_fragments(item)
             if context_fragments:
-                background_lines.append(f"- 反馈 {item.id} 上下文：{' | '.join(context_fragments)}")
+                background_lines.append(f'- 反馈 {item.id} 上下文：{" | ".join(context_fragments)}')
             if item.expected_behavior:
-                expected_lines.append(f"- {item.expected_behavior}")
+                expected_lines.append(f'- {item.expected_behavior}')
             else:
-                missing_lines.append(f"- 反馈 {item.id} 缺少期望表现。")
+                missing_lines.append(f'- 反馈 {item.id} 缺少期望表现。')
             if item.actual_behavior:
-                actual_lines.append(f"- {item.actual_behavior}")
+                actual_lines.append(f'- {item.actual_behavior}')
             else:
-                missing_lines.append(f"- 反馈 {item.id} 缺少实际表现。")
+                missing_lines.append(f'- 反馈 {item.id} 缺少实际表现。')
 
         if not steps_lines:
-            steps_lines.append("1. 当前反馈未提供完整复现步骤，需要根据关联标识定位对应流程后补充。")
-            missing_lines.append("- 所选反馈缺少可直接执行的复现步骤。")
+            steps_lines.append('1. 当前反馈未提供完整复现步骤，需要根据关联标识定位对应流程后补充。')
+            missing_lines.append('- 所选反馈缺少可直接执行的复现步骤。')
         if not expected_lines:
-            expected_lines.append("- 当前反馈未提供明确期望表现。")
+            expected_lines.append('- 当前反馈未提供明确期望表现。')
         if not actual_lines:
-            actual_lines.append("- 当前反馈未提供明确实际表现。")
+            actual_lines.append('- 当前反馈未提供明确实际表现。')
         if not missing_lines:
-            missing_lines.append("- 暂未发现影响初步排查的关键信息缺口。")
+            missing_lines.append('- 暂未发现影响初步排查的关键信息缺口。')
 
-        return "\n\n".join(
+        return '\n\n'.join(
             [
-                "## 摘要\n" + "\n".join(summary_lines),
-                f"## 关联标识\n{primary_related_id}",
-                f"## 用户反馈数量\n{len(feedback_items)}",
-                "## 背景\n" + "\n".join(background_lines),
-                "## 复现线索\n" + "\n".join(steps_lines),
-                "## 期望表现\n" + "\n".join(expected_lines),
-                "## 实际表现\n" + "\n".join(actual_lines),
-                "## 影响范围\n- 多条用户反馈指向该关联流程，建议优先确认是否影响主路径体验。",
-                "## 待补充信息\n" + "\n".join(missing_lines),
-                "## 原始反馈\n" + "\n".join(summary_lines),
+                '## 摘要\n' + '\n'.join(summary_lines),
+                f'## 关联标识\n{primary_related_id}',
+                f'## 用户反馈数量\n{len(feedback_items)}',
+                '## 背景\n' + '\n'.join(background_lines),
+                '## 复现线索\n' + '\n'.join(steps_lines),
+                '## 期望表现\n' + '\n'.join(expected_lines),
+                '## 实际表现\n' + '\n'.join(actual_lines),
+                '## 影响范围\n- 多条用户反馈指向该关联流程，建议优先确认是否影响主路径体验。',
+                '## 待补充信息\n' + '\n'.join(missing_lines),
+                '## 原始反馈\n' + '\n'.join(summary_lines),
             ]
         )
 
     def _build_context_fragments(self, item: FeedbackRecord) -> list[str]:
         fragments: list[str] = []
         if item.page_title:
-            fragments.append(f"页面标题：{item.page_title}")
+            fragments.append(f'页面标题：{item.page_title}')
         if item.page_url:
-            fragments.append(f"页面链接：{item.page_url}")
+            fragments.append(f'页面链接：{item.page_url}')
         if item.environment_context:
-            fragments.append(f"运行环境：{item.environment_context}")
+            fragments.append(f'运行环境：{item.environment_context}')
         return fragments
 
 
@@ -615,16 +614,16 @@ class AIIntegrationError(ValueError):
 
 class OpenAICompatibleClient:
     REQUIRED_SECTION_HEADINGS = (
-        "## 摘要",
-        "## 关联标识",
-        "## 用户反馈数量",
-        "## 背景",
-        "## 复现线索",
-        "## 期望表现",
-        "## 实际表现",
-        "## 影响范围",
-        "## 待补充信息",
-        "## 原始反馈",
+        '## 摘要',
+        '## 关联标识',
+        '## 用户反馈数量',
+        '## 背景',
+        '## 复现线索',
+        '## 期望表现',
+        '## 实际表现',
+        '## 影响范围',
+        '## 待补充信息',
+        '## 原始反馈',
     )
 
     def __init__(self) -> None:
@@ -632,131 +631,133 @@ class OpenAICompatibleClient:
 
     def create_issue_draft(self, *, prompt_snapshot: str, feedback_items: list[FeedbackRecord]) -> dict[str, str]:
         if not self.settings.ai_api_key:
-            raise AIIntegrationError("AI_API_KEY is required")
+            raise AIIntegrationError('AI_API_KEY is required')
         if not self.settings.ai_api_base_url or not self.settings.ai_model:
-            raise AIIntegrationError("AI_API_BASE_URL and AI_MODEL are required")
+            raise AIIntegrationError('AI_API_BASE_URL and AI_MODEL are required')
 
         endpoint = self._build_chat_completions_endpoint(self.settings.ai_api_base_url)
         payload = json.dumps(
             {
-                "model": self.settings.ai_model,
-                "temperature": 0.2,
-                "max_completion_tokens": 2400,
-                "stream": False,
-                "messages": [
+                'model': self.settings.ai_model,
+                'temperature': 0.2,
+                'max_completion_tokens': 2400,
+                'stream': False,
+                'messages': [
                     {
-                        "role": "system",
-                        "content": (
-                            "你是产品问题整理助手，负责把多条用户反馈整理成一条可直接提交到 GitHub 的中文 Issue。"
-                            "只返回严格 JSON，字段只能包含 title 和 body_markdown。"
-                            "不要使用 markdown 代码块包裹 JSON。"
+                        'role': 'system',
+                        'content': (
+                            '你是产品问题整理助手，负责把多条用户反馈整理成一条可直接提交到 GitHub 的中文 Issue。'
+                            '只返回严格 JSON，字段只能包含 title 和 body_markdown。'
+                            '不要使用 markdown 代码块包裹 JSON。'
                         ),
                     },
                     {
-                        "role": "user",
-                        "content": self._build_user_prompt(prompt_snapshot=prompt_snapshot, feedback_items=feedback_items),
+                        'role': 'user',
+                        'content': self._build_user_prompt(
+                            prompt_snapshot=prompt_snapshot, feedback_items=feedback_items
+                        ),
                     },
                 ],
             }
-        ).encode("utf-8")
+        ).encode('utf-8')
         http_request = request.Request(
             endpoint,
             data=payload,
-            method="POST",
+            method='POST',
             headers={
-                "Authorization": f"Bearer {self.settings.ai_api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "issue-aggregator-mvp",
+                'Authorization': f'Bearer {self.settings.ai_api_key}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'issue-aggregator-mvp',
             },
         )
 
         try:
             with request.urlopen(http_request, timeout=60) as response:
-                response_body = json.loads(response.read().decode("utf-8"))
+                response_body = json.loads(response.read().decode('utf-8'))
         except TimeoutError as exc:
-            raise AIIntegrationError("AI API request timed out") from exc
+            raise AIIntegrationError('AI API request timed out') from exc
         except error.HTTPError as exc:
-            raise AIIntegrationError(f"AI API request failed with status {exc.code}") from exc
+            raise AIIntegrationError(f'AI API request failed with status {exc.code}') from exc
         except error.URLError as exc:
             raise AIIntegrationError(str(exc.reason)) from exc
         except json.JSONDecodeError as exc:
-            raise AIIntegrationError("AI API returned invalid JSON") from exc
+            raise AIIntegrationError('AI API returned invalid JSON') from exc
 
         content = self._extract_message_content(response_body)
         parsed = self._parse_json_content(content)
 
-        title = str(parsed.get("title", "")).strip()
-        body_markdown = str(parsed.get("body_markdown", "")).strip()
+        title = str(parsed.get('title', '')).strip()
+        body_markdown = str(parsed.get('body_markdown', '')).strip()
         if not title or not body_markdown:
-            raise AIIntegrationError("AI response must include title and body_markdown")
+            raise AIIntegrationError('AI response must include title and body_markdown')
         self._validate_issue_draft(title=title, body_markdown=body_markdown)
-        return {"title": title[:200], "body_markdown": body_markdown}
+        return {'title': title[:200], 'body_markdown': body_markdown}
 
     def _build_chat_completions_endpoint(self, base_url: str) -> str:
-        normalized = base_url.rstrip("/")
-        if normalized.endswith("/chat/completions"):
+        normalized = base_url.rstrip('/')
+        if normalized.endswith('/chat/completions'):
             return normalized
-        return f"{normalized}/chat/completions"
+        return f'{normalized}/chat/completions'
 
     def _build_user_prompt(self, *, prompt_snapshot: str, feedback_items: list[FeedbackRecord]) -> str:
-        return "\n\n".join(
+        return '\n\n'.join(
             [
-                "请根据以下已分组用户反馈，生成一条中文 GitHub Issue 草稿。",
-                "输出要求：",
-                "- title 使用中文，格式为：[缺陷] 具体问题、[优化] 具体改进、[新功能] 具体能力或 [问题] 具体疑问。",
-                "- title 控制在 50 个中文字符以内，避免泛泛描述。",
-                "- body_markdown 使用中文 Markdown。",
-                "- body_markdown 必须包含这些二级标题：摘要、关联标识、用户反馈数量、背景、复现线索、期望表现、实际表现、影响范围、待补充信息、原始反馈。",
-                "- 保留用户反馈里的具体场景、症状、期望和实际表现。",
-                "- 对缺失信息明确写入待补充信息，不要编造复现步骤、错误码或环境。",
-                "- 多条反馈表达同一问题时合并归纳，保留关键差异。",
-                f"用户反馈数量：{len(feedback_items)}",
-                "反馈项：",
+                '请根据以下已分组用户反馈，生成一条中文 GitHub Issue 草稿。',
+                '输出要求：',
+                '- title 使用中文，格式为：[缺陷] 具体问题、[优化] 具体改进、[新功能] 具体能力或 [问题] 具体疑问。',
+                '- title 控制在 50 个中文字符以内，避免泛泛描述。',
+                '- body_markdown 使用中文 Markdown。',
+                '- body_markdown 必须包含这些二级标题：摘要、关联标识、用户反馈数量、背景、复现线索、期望表现、实际表现、影响范围、待补充信息、原始反馈。',
+                '- 保留用户反馈里的具体场景、症状、期望和实际表现。',
+                '- 对缺失信息明确写入待补充信息，不要编造复现步骤、错误码或环境。',
+                '- 多条反馈表达同一问题时合并归纳，保留关键差异。',
+                f'用户反馈数量：{len(feedback_items)}',
+                '反馈项：',
                 prompt_snapshot,
             ]
         )
 
     def _extract_message_content(self, response_body: dict[str, object]) -> str:
-        choices = response_body.get("choices")
+        choices = response_body.get('choices')
         if not isinstance(choices, list) or not choices:
-            raise AIIntegrationError("AI API response has no choices")
+            raise AIIntegrationError('AI API response has no choices')
         first_choice = choices[0]
         if not isinstance(first_choice, dict):
-            raise AIIntegrationError("AI API response choice is invalid")
-        message = first_choice.get("message")
+            raise AIIntegrationError('AI API response choice is invalid')
+        message = first_choice.get('message')
         if not isinstance(message, dict):
-            raise AIIntegrationError("AI API response message is invalid")
-        content = message.get("content")
+            raise AIIntegrationError('AI API response message is invalid')
+        content = message.get('content')
         if not isinstance(content, str) or not content.strip():
-            raise AIIntegrationError("AI API response content is empty")
+            raise AIIntegrationError('AI API response content is empty')
         return content.strip()
 
     def _parse_json_content(self, content: str) -> dict[str, object]:
         normalized = content.strip()
-        if normalized.startswith("```"):
+        if normalized.startswith('```'):
             lines = normalized.splitlines()
-            if lines and lines[0].startswith("```"):
+            if lines and lines[0].startswith('```'):
                 lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
+            if lines and lines[-1].strip() == '```':
                 lines = lines[:-1]
-            normalized = "\n".join(lines).strip()
+            normalized = '\n'.join(lines).strip()
         try:
             parsed = json.loads(normalized)
         except json.JSONDecodeError as exc:
-            raise AIIntegrationError("AI response content is not valid JSON") from exc
+            raise AIIntegrationError('AI response content is not valid JSON') from exc
         if not isinstance(parsed, dict):
-            raise AIIntegrationError("AI response JSON must be an object")
+            raise AIIntegrationError('AI response JSON must be an object')
         return parsed
 
     def _validate_issue_draft(self, *, title: str, body_markdown: str) -> None:
-        valid_prefixes = ("[缺陷]", "[优化]", "[新功能]", "[问题]")
+        valid_prefixes = ('[缺陷]', '[优化]', '[新功能]', '[问题]')
         if not title.startswith(valid_prefixes):
-            raise AIIntegrationError("AI response title did not follow the required Chinese format")
+            raise AIIntegrationError('AI response title did not follow the required Chinese format')
 
         missing_headings = [heading for heading in self.REQUIRED_SECTION_HEADINGS if heading not in body_markdown]
         if missing_headings:
             raise AIIntegrationError(
-                "AI response body did not include required headings: " + ", ".join(missing_headings)
+                'AI response body did not include required headings: ' + ', '.join(missing_headings)
             )
 
 
@@ -806,7 +807,7 @@ class DraftRepository:
     def get_draft(self, draft_id: str) -> DraftRecord | None:
         with connection_context() as connection:
             row = connection.execute(
-                "SELECT id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at FROM drafts WHERE id = ?",
+                'SELECT id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at FROM drafts WHERE id = ?',
                 (draft_id,),
             ).fetchone()
         return DraftRecord(**dict(row)) if row else None
@@ -814,7 +815,7 @@ class DraftRepository:
     def get_draft_by_batch_id(self, batch_id: str) -> DraftRecord | None:
         with connection_context() as connection:
             row = connection.execute(
-                "SELECT id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at FROM drafts WHERE batch_id = ? ORDER BY updated_at DESC LIMIT 1",
+                'SELECT id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at FROM drafts WHERE batch_id = ? ORDER BY updated_at DESC LIMIT 1',
                 (batch_id,),
             ).fetchone()
         return DraftRecord(**dict(row)) if row else None
@@ -823,7 +824,7 @@ class DraftRepository:
         updated_at = utc_now_iso()
         with connection_context() as connection:
             connection.execute(
-                "UPDATE drafts SET title = ?, body_markdown = ?, updated_at = ? WHERE id = ?",
+                'UPDATE drafts SET title = ?, body_markdown = ?, updated_at = ? WHERE id = ?',
                 (payload.title, payload.body_markdown, updated_at, draft_id),
             )
         return self.get_draft(draft_id)
@@ -832,7 +833,7 @@ class DraftRepository:
         updated_at = utc_now_iso()
         with connection_context() as connection:
             connection.execute(
-                "UPDATE drafts SET status = ?, updated_at = ? WHERE id = ?",
+                'UPDATE drafts SET status = ?, updated_at = ? WHERE id = ?',
                 (status.value, updated_at, draft_id),
             )
         return self.get_draft(draft_id)
@@ -852,18 +853,18 @@ class SubmissionRepository:
         params: list[object] = []
 
         if related_id:
-            conditions.append("submissions.related_id = ?")
+            conditions.append('submissions.related_id = ?')
             params.append(related_id)
         if issue_type:
-            conditions.append("feedback_items.type = ?")
+            conditions.append('feedback_items.type = ?')
             params.append(issue_type)
         if keyword:
-            like_value = f"%{keyword.strip()}%"
-            conditions.append("(drafts.title LIKE ? OR drafts.body_markdown LIKE ? OR submissions.related_id LIKE ?)")
+            like_value = f'%{keyword.strip()}%'
+            conditions.append('(drafts.title LIKE ? OR drafts.body_markdown LIKE ? OR submissions.related_id LIKE ?)')
             params.extend([like_value, like_value, like_value])
 
-        conditions.append("submissions.response_status >= 200 AND submissions.response_status < 300")
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        conditions.append('submissions.response_status >= 200 AND submissions.response_status < 300')
+        where_clause = f'WHERE {" AND ".join(conditions)}' if conditions else ''
         offset = (page - 1) * page_size
 
         with connection_context() as connection:
@@ -878,7 +879,7 @@ class SubmissionRepository:
                 {where_clause}
                 """,
                 params,
-            ).fetchone()["total"]
+            ).fetchone()['total']
 
             rows = connection.execute(
                 f"""
@@ -907,10 +908,10 @@ class SubmissionRepository:
             ).fetchall()
 
         return {
-            "items": [dict(row) for row in rows],
-            "page": page,
-            "page_size": page_size,
-            "total": total,
+            'items': [dict(row) for row in rows],
+            'page': page,
+            'page_size': page_size,
+            'total': total,
         }
 
     def create_submission_fixture(
@@ -926,24 +927,45 @@ class SubmissionRepository:
     ) -> None:
         with connection_context() as connection:
             connection.execute(
-                "INSERT OR IGNORE INTO draft_batches (id, status, primary_related_id, related_id_count, integration_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ("batch_fixture", "submitted", related_id, 1, None, submitted_at, submitted_at),
+                'INSERT OR IGNORE INTO draft_batches (id, status, primary_related_id, related_id_count, integration_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                ('batch_fixture', 'submitted', related_id, 1, None, submitted_at, submitted_at),
             )
             connection.execute(
-                "INSERT OR IGNORE INTO feedback_items (id, type, related_id, expected_behavior, actual_behavior, raw_content, status, created_at, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (f"fb_fixture_{issue_number}", issue_type, related_id, None, None, title, FeedbackStatus.SUBMITTED.value, submitted_at, submitted_at),
+                'INSERT OR IGNORE INTO feedback_items (id, type, related_id, expected_behavior, actual_behavior, raw_content, status, created_at, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (
+                    f'fb_fixture_{issue_number}',
+                    issue_type,
+                    related_id,
+                    None,
+                    None,
+                    title,
+                    FeedbackStatus.SUBMITTED.value,
+                    submitted_at,
+                    submitted_at,
+                ),
             )
             connection.execute(
-                "INSERT OR IGNORE INTO draft_batch_items (id, batch_id, feedback_item_id) VALUES (?, ?, ?)",
-                (f"dbi_{issue_number}", "batch_fixture", f"fb_fixture_{issue_number}"),
+                'INSERT OR IGNORE INTO draft_batch_items (id, batch_id, feedback_item_id) VALUES (?, ?, ?)',
+                (f'dbi_{issue_number}', 'batch_fixture', f'fb_fixture_{issue_number}'),
             )
             connection.execute(
-                "INSERT OR REPLACE INTO drafts (id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (draft_id, "batch_fixture", title, title, related_id, "submitted", None, None, submitted_at),
+                'INSERT OR REPLACE INTO drafts (id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (draft_id, 'batch_fixture', title, title, related_id, 'submitted', None, None, submitted_at),
             )
             connection.execute(
-                "INSERT OR REPLACE INTO submissions (id, draft_id, github_issue_number, github_issue_url, related_id, github_state, labels_snapshot, response_status, submitted_at, error_summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (f"sub_{issue_number}", draft_id, issue_number, issue_url, related_id, "open", None, 201, submitted_at, None),
+                'INSERT OR REPLACE INTO submissions (id, draft_id, github_issue_number, github_issue_url, related_id, github_state, labels_snapshot, response_status, submitted_at, error_summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (
+                    f'sub_{issue_number}',
+                    draft_id,
+                    issue_number,
+                    issue_url,
+                    related_id,
+                    'open',
+                    None,
+                    201,
+                    submitted_at,
+                    None,
+                ),
             )
 
     def create_submission(
@@ -992,18 +1014,18 @@ class SubmissionRepository:
         return record
 
     def count_recent_submissions(self, *, related_id: str | None = None, since_iso: str) -> int:
-        conditions = ["submitted_at >= ?", "response_status >= 200 AND response_status < 300"]
+        conditions = ['submitted_at >= ?', 'response_status >= 200 AND response_status < 300']
         params: list[object] = [since_iso]
         if related_id:
-            conditions.append("related_id = ?")
+            conditions.append('related_id = ?')
             params.append(related_id)
-        where_clause = f"WHERE {' AND '.join(conditions)}"
+        where_clause = f'WHERE {" AND ".join(conditions)}'
         with connection_context() as connection:
             row = connection.execute(
-                f"SELECT COUNT(*) AS total FROM submissions {where_clause}",
+                f'SELECT COUNT(*) AS total FROM submissions {where_clause}',
                 params,
             ).fetchone()
-        return row["total"]
+        return row['total']
 
 
 class GitHubSubmissionError(ValueError):
@@ -1016,38 +1038,38 @@ class GitHubIssueClient:
 
     def create_issue(self, *, title: str, body: str) -> dict[str, object]:
         if not self.settings.github_token:
-            raise GitHubSubmissionError("GITHUB_TOKEN is required")
+            raise GitHubSubmissionError('GITHUB_TOKEN is required')
         if not self.settings.github_repo_owner or not self.settings.github_repo_name:
-            raise GitHubSubmissionError("GitHub repository settings are required")
+            raise GitHubSubmissionError('GitHub repository settings are required')
 
         endpoint = (
-            f"https://api.github.com/repos/{self.settings.github_repo_owner}/{self.settings.github_repo_name}/issues"
+            f'https://api.github.com/repos/{self.settings.github_repo_owner}/{self.settings.github_repo_name}/issues'
         )
-        payload = json.dumps({"title": title, "body": body}).encode("utf-8")
+        payload = json.dumps({'title': title, 'body': body}).encode('utf-8')
         http_request = request.Request(
             endpoint,
             data=payload,
-            method="POST",
+            method='POST',
             headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.settings.github_token}",
-                "Content-Type": "application/json",
-                "User-Agent": "issue-aggregator-mvp",
+                'Accept': 'application/vnd.github+json',
+                'Authorization': f'Bearer {self.settings.github_token}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'issue-aggregator-mvp',
             },
         )
 
         try:
             with request.urlopen(http_request, timeout=15) as response:
-                response_body = json.loads(response.read().decode("utf-8"))
+                response_body = json.loads(response.read().decode('utf-8'))
                 return {
-                    "issue_number": response_body["number"],
-                    "issue_url": response_body["html_url"],
-                    "related_id": response_body.get("body", ""),
-                    "response_status": response.status,
-                    "github_state": response_body.get("state"),
+                    'issue_number': response_body['number'],
+                    'issue_url': response_body['html_url'],
+                    'related_id': response_body.get('body', ''),
+                    'response_status': response.status,
+                    'github_state': response_body.get('state'),
                 }
         except error.HTTPError as exc:
-            raise GitHubSubmissionError(f"GitHub API request failed with status {exc.code}") from exc
+            raise GitHubSubmissionError(f'GitHub API request failed with status {exc.code}') from exc
         except error.URLError as exc:
             raise GitHubSubmissionError(str(exc.reason)) from exc
 
@@ -1056,12 +1078,12 @@ class DraftSubmissionService:
     MAX_GITHUB_TITLE_LENGTH = 160
     MAX_GITHUB_BODY_LENGTH = 12000
     SENSITIVE_CONTENT_PATTERNS = (
-        re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
-        re.compile(r"glpat-[A-Za-z0-9_-]{20,}"),
-        re.compile(r"sk-[A-Za-z0-9]{20,}"),
-        re.compile(r"AKIA[0-9A-Z]{16}"),
-        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
-        re.compile(r"authorization\s*:\s*bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
+        re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'),
+        re.compile(r'glpat-[A-Za-z0-9_-]{20,}'),
+        re.compile(r'sk-[A-Za-z0-9]{20,}'),
+        re.compile(r'AKIA[0-9A-Z]{16}'),
+        re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),
+        re.compile(r'authorization\s*:\s*bearer\s+[A-Za-z0-9._\-]+', re.IGNORECASE),
     )
 
     def __init__(self) -> None:
@@ -1075,11 +1097,11 @@ class DraftSubmissionService:
     def submit_draft(self, draft_id: str) -> SubmissionRecord:
         draft = self.draft_repository.get_draft(draft_id)
         if not draft:
-            raise RepositoryError("Draft not found")
+            raise RepositoryError('Draft not found')
 
         batch = self.batch_repository.get_batch(draft.batch_id)
         if not batch:
-            raise RepositoryError("Draft batch not found")
+            raise RepositoryError('Draft batch not found')
 
         self._validate_draft_content(draft)
         self._enforce_rate_limits(draft.related_id_summary)
@@ -1096,12 +1118,12 @@ class DraftSubmissionService:
             self.submission_repository.create_submission(
                 draft_id=draft.id,
                 github_issue_number=0,
-                github_issue_url="",
+                github_issue_url='',
                 related_id=draft.related_id_summary,
                 response_status=500,
                 error_summary=str(exc),
             )
-            raise RepositoryError(str(exc))
+            raise RepositoryError(str(exc)) from exc
 
         feedback_items = self.batch_repository.list_batch_feedback_items(batch.id)
         self.feedback_repository.mark_feedback_submitted([item.id for item in feedback_items])
@@ -1109,51 +1131,58 @@ class DraftSubmissionService:
         self.batch_repository.update_batch_status(batch.id, status=DraftBatchStatus.SUBMITTED)
         return self.submission_repository.create_submission(
             draft_id=draft.id,
-            github_issue_number=int(github_response["issue_number"]),
-            github_issue_url=str(github_response["issue_url"]),
+            github_issue_number=int(github_response['issue_number']),
+            github_issue_url=str(github_response['issue_url']),
             related_id=batch.primary_related_id or draft.related_id_summary,
-            response_status=int(github_response["response_status"]),
-            github_state=str(github_response.get("github_state") or "open"),
+            response_status=int(github_response['response_status']),
+            github_state=str(github_response.get('github_state') or 'open'),
         )
 
     def _enforce_rate_limits(self, related_id_summary: str) -> None:
         now = datetime.now(timezone.utc)
-        global_since = (now - timedelta(hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        global_since = (now - timedelta(hours=1)).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
         total_recent = self.submission_repository.count_recent_submissions(since_iso=global_since)
         if total_recent >= self.settings.rate_limit_per_hour:
-            raise RepositoryError("Submission rate limit reached")
+            raise RepositoryError('Submission rate limit reached')
 
-        related_ids = [item.strip() for item in related_id_summary.split(",") if item.strip()]
-        related_since = (now - timedelta(hours=self.settings.related_id_rate_limit_window)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        related_ids = [item.strip() for item in related_id_summary.split(',') if item.strip()]
+        related_since = (
+            (now - timedelta(hours=self.settings.related_id_rate_limit_window))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
         for related_id in related_ids:
             per_related_count = self.submission_repository.count_recent_submissions(
                 related_id=related_id,
                 since_iso=related_since,
             )
             if per_related_count > 0:
-                raise RepositoryError(f"related_id rate limit reached for {related_id}")
+                raise RepositoryError(f'related_id rate limit reached for {related_id}')
 
     def _validate_draft_content(self, draft: DraftRecord) -> None:
         if len(draft.title) > self.MAX_GITHUB_TITLE_LENGTH:
-            raise RepositoryError("Draft title exceeds safe submission limit")
+            raise RepositoryError('Draft title exceeds safe submission limit')
         if len(draft.body_markdown) > self.MAX_GITHUB_BODY_LENGTH:
-            raise RepositoryError("Draft body exceeds safe submission limit")
+            raise RepositoryError('Draft body exceeds safe submission limit')
 
-        combined_content = f"{draft.title}\n{draft.body_markdown}"
+        combined_content = f'{draft.title}\n{draft.body_markdown}'
         for pattern in self.SENSITIVE_CONTENT_PATTERNS:
             if pattern.search(combined_content):
-                raise RepositoryError("Draft content contains sensitive credential-like content")
+                raise RepositoryError('Draft content contains sensitive credential-like content')
 
 
 class AdminSessionRepository:
-    def create_session(self, *, session_token_hash: str, username: str, client_ip: str | None, user_agent_summary: str | None) -> AdminSessionRecord:
+    def create_session(
+        self, *, session_token_hash: str, username: str, client_ip: str | None, user_agent_summary: str | None
+    ) -> AdminSessionRecord:
         from .config import get_settings
 
         settings = get_settings()
         now = datetime.now(timezone.utc)
         idle_expires = now + timedelta(minutes=settings.admin_session_idle_minutes)
         absolute_expires = now + timedelta(hours=settings.admin_session_max_hours)
-        session_id = f"sess_{uuid4().hex[:12]}"
+        session_id = f'sess_{uuid4().hex[:12]}'
 
         with connection_context() as connection:
             connection.execute(
@@ -1169,8 +1198,8 @@ class AdminSessionRepository:
                     user_agent_summary,
                     utc_now_iso(),
                     utc_now_iso(),
-                    idle_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-                    absolute_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                    idle_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+                    absolute_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                 ),
             )
         return AdminSessionRecord(
@@ -1181,8 +1210,8 @@ class AdminSessionRepository:
             user_agent_summary=user_agent_summary,
             created_at=utc_now_iso(),
             last_seen_at=utc_now_iso(),
-            idle_expires_at=idle_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            absolute_expires_at=absolute_expires.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            idle_expires_at=idle_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+            absolute_expires_at=absolute_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             revoked_at=None,
         )
 
@@ -1202,37 +1231,37 @@ class AdminSessionRepository:
         if row is None:
             return None
         return AdminSessionRecord(
-            id=row["id"],
-            session_token_hash=row["session_token_hash"],
-            username=row["username"],
-            client_ip=row["client_ip"],
-            user_agent_summary=row["user_agent_summary"],
-            created_at=row["created_at"],
-            last_seen_at=row["last_seen_at"],
-            idle_expires_at=row["idle_expires_at"],
-            absolute_expires_at=row["absolute_expires_at"],
-            revoked_at=row["revoked_at"],
+            id=row['id'],
+            session_token_hash=row['session_token_hash'],
+            username=row['username'],
+            client_ip=row['client_ip'],
+            user_agent_summary=row['user_agent_summary'],
+            created_at=row['created_at'],
+            last_seen_at=row['last_seen_at'],
+            idle_expires_at=row['idle_expires_at'],
+            absolute_expires_at=row['absolute_expires_at'],
+            revoked_at=row['revoked_at'],
         )
 
     def find_by_token_hash(self, session_token_hash: str) -> AdminSessionRecord | None:
         with connection_context() as connection:
             row = connection.execute(
-                "SELECT * FROM admin_sessions WHERE session_token_hash = ? LIMIT 1",
+                'SELECT * FROM admin_sessions WHERE session_token_hash = ? LIMIT 1',
                 (session_token_hash,),
             ).fetchone()
         if row is None:
             return None
         return AdminSessionRecord(
-            id=row["id"],
-            session_token_hash=row["session_token_hash"],
-            username=row["username"],
-            client_ip=row["client_ip"],
-            user_agent_summary=row["user_agent_summary"],
-            created_at=row["created_at"],
-            last_seen_at=row["last_seen_at"],
-            idle_expires_at=row["idle_expires_at"],
-            absolute_expires_at=row["absolute_expires_at"],
-            revoked_at=row["revoked_at"],
+            id=row['id'],
+            session_token_hash=row['session_token_hash'],
+            username=row['username'],
+            client_ip=row['client_ip'],
+            user_agent_summary=row['user_agent_summary'],
+            created_at=row['created_at'],
+            last_seen_at=row['last_seen_at'],
+            idle_expires_at=row['idle_expires_at'],
+            absolute_expires_at=row['absolute_expires_at'],
+            revoked_at=row['revoked_at'],
         )
 
     def touch_session(self, session_token_hash: str) -> bool:
@@ -1240,7 +1269,12 @@ class AdminSessionRepository:
 
         settings = get_settings()
         now_iso = utc_now_iso()
-        idle_expires = (datetime.now(timezone.utc) + timedelta(minutes=settings.admin_session_idle_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        idle_expires = (
+            (datetime.now(timezone.utc) + timedelta(minutes=settings.admin_session_idle_minutes))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
         with connection_context() as connection:
             cursor = connection.execute(
                 """
@@ -1258,19 +1292,19 @@ class AdminSessionRepository:
         now_iso = utc_now_iso()
         with connection_context() as connection:
             cursor = connection.execute(
-                "UPDATE admin_sessions SET revoked_at = ? WHERE session_token_hash = ? AND revoked_at IS NULL",
+                'UPDATE admin_sessions SET revoked_at = ? WHERE session_token_hash = ? AND revoked_at IS NULL',
                 (now_iso, session_token_hash),
             )
         return cursor.rowcount > 0
 
 
 class AdminLoginAttemptRepository:
-    LOGIN_RESULT_SUCCESS = "success"
-    LOGIN_RESULT_FAILURE = "failure"
-    LOGIN_RESULT_COOLDOWN = "cooldown_blocked"
+    LOGIN_RESULT_SUCCESS = 'success'
+    LOGIN_RESULT_FAILURE = 'failure'
+    LOGIN_RESULT_COOLDOWN = 'cooldown_blocked'
 
     def record_attempt(self, *, username: str, client_ip: str | None, result: str, reason: str | None = None) -> str:
-        attempt_id = f"la_{uuid4().hex[:12]}"
+        attempt_id = f'la_{uuid4().hex[:12]}'
         with connection_context() as connection:
             connection.execute(
                 """
@@ -1290,7 +1324,7 @@ class AdminLoginAttemptRepository:
                 """,
                 (client_ip, self.LOGIN_RESULT_FAILURE, since_iso),
             ).fetchone()
-        return int(row["total"])
+        return int(row['total'])
 
     def last_attempt_after(self, *, client_ip: str, since_iso: str) -> AdminLoginAttemptRecord | None:
         with connection_context() as connection:
@@ -1306,10 +1340,10 @@ class AdminLoginAttemptRepository:
         if row is None:
             return None
         return AdminLoginAttemptRecord(
-            id=row["id"],
-            username=row["username"],
-            client_ip=row["client_ip"],
-            result=row["result"],
-            reason=row["reason"],
-            created_at=row["created_at"],
+            id=row['id'],
+            username=row['username'],
+            client_ip=row['client_ip'],
+            result=row['result'],
+            reason=row['reason'],
+            created_at=row['created_at'],
         )

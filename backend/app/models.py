@@ -9,35 +9,34 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-
-RELATED_ID_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
-FEEDBACK_ID_PATTERN = r"^fb_[a-f0-9]{12}$"
-BATCH_ID_PATTERN = r"^batch_[a-f0-9]{12}$"
-DRAFT_ID_PATTERN = r"^draft_[a-f0-9]{12}$"
-FeedbackType = Literal["bug", "feature", "enhancement", "question"]
-FEEDBACK_TYPES = {"bug", "feature", "enhancement", "question"}
+RELATED_ID_PATTERN = r'^[a-z0-9]+(?:-[a-z0-9]+)*$'
+FEEDBACK_ID_PATTERN = r'^fb_[a-f0-9]{12}$'
+BATCH_ID_PATTERN = r'^batch_[a-f0-9]{12}$'
+DRAFT_ID_PATTERN = r'^draft_[a-f0-9]{12}$'
+FeedbackType = Literal['bug', 'feature', 'enhancement', 'question']
+FEEDBACK_TYPES = {'bug', 'feature', 'enhancement', 'question'}
 
 
 class FeedbackStatus(str, Enum):
-    PENDING = "pending"
-    GROUPED = "grouped"
-    SUBMITTED = "submitted"
+    PENDING = 'pending'
+    GROUPED = 'grouped'
+    SUBMITTED = 'submitted'
 
 
 class DraftBatchStatus(str, Enum):
-    CREATED = "created"
-    INTEGRATING = "integrating"
-    DRAFT_READY = "draft_ready"
-    APPROVED = "approved"
-    SUBMITTED = "submitted"
-    FAILED = "failed"
+    CREATED = 'created'
+    INTEGRATING = 'integrating'
+    DRAFT_READY = 'draft_ready'
+    APPROVED = 'approved'
+    SUBMITTED = 'submitted'
+    FAILED = 'failed'
 
 
 class DraftStatus(str, Enum):
-    DRAFT_READY = "draft_ready"
-    APPROVED = "approved"
-    SUBMITTED = "submitted"
-    FAILED = "failed"
+    DRAFT_READY = 'draft_ready'
+    APPROVED = 'approved'
+    SUBMITTED = 'submitted'
+    FAILED = 'failed'
 
 
 class FeedbackCreatePayload(BaseModel):
@@ -50,23 +49,23 @@ class FeedbackCreatePayload(BaseModel):
     page_title: str | None = Field(default=None, max_length=200)
     environment_context: str | None = Field(default=None, max_length=500)
 
-    @field_validator("related_id")
+    @field_validator('related_id')
     @classmethod
     def validate_related_id(cls, value: str) -> str:
         normalized = value.strip()
         if not fullmatch(RELATED_ID_PATTERN, normalized):
-            raise ValueError("related_id must use lowercase letters, numbers, and hyphens")
+            raise ValueError('related_id must use lowercase letters, numbers, and hyphens')
         return normalized
 
-    @field_validator("raw_content")
+    @field_validator('raw_content')
     @classmethod
     def validate_raw_content(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("raw_content cannot be empty")
+            raise ValueError('raw_content cannot be empty')
         return normalized
 
-    @field_validator("page_url")
+    @field_validator('page_url')
     @classmethod
     def validate_page_url(cls, value: str | None) -> str | None:
         if value is None:
@@ -78,18 +77,18 @@ class FeedbackCreatePayload(BaseModel):
 
         parsed = urlsplit(normalized)
         if parsed.scheme and parsed.netloc:
-            sanitized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", "", ""))
-        elif normalized.startswith("/"):
-            sanitized = urlunsplit(("", "", parsed.path or "/", "", ""))
+            sanitized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path or '/', '', ''))
+        elif normalized.startswith('/'):
+            sanitized = urlunsplit(('', '', parsed.path or '/', '', ''))
         else:
-            sanitized = normalized.split("#", 1)[0].split("?", 1)[0]
+            sanitized = normalized.split('#', 1)[0].split('?', 1)[0]
 
         sanitized = sanitized.strip()
         if not sanitized:
             return None
         return sanitized[:1000]
 
-    @field_validator("expected_behavior", "actual_behavior", "page_url", "page_title", "environment_context")
+    @field_validator('expected_behavior', 'actual_behavior', 'page_url', 'page_title', 'environment_context')
     @classmethod
     def validate_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -102,14 +101,14 @@ class DraftBatchCreatePayload(BaseModel):
     feedback_item_ids: list[str] = Field(min_length=1, max_length=50)
     confirm_mixed_related_ids: bool = False
 
-    @field_validator("feedback_item_ids")
+    @field_validator('feedback_item_ids')
     @classmethod
     def validate_feedback_item_ids(cls, value: list[str]) -> list[str]:
         normalized = [item.strip() for item in value if item and item.strip()]
         if not normalized:
-            raise ValueError("feedback_item_ids cannot be empty")
+            raise ValueError('feedback_item_ids cannot be empty')
         if len(set(normalized)) != len(normalized):
-            raise ValueError("feedback_item_ids cannot contain duplicates")
+            raise ValueError('feedback_item_ids cannot contain duplicates')
         return normalized
 
 
@@ -117,12 +116,12 @@ class DraftUpdatePayload(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     body_markdown: str = Field(min_length=1, max_length=12000)
 
-    @field_validator("title", "body_markdown")
+    @field_validator('title', 'body_markdown')
     @classmethod
     def validate_non_empty_text(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("field cannot be empty")
+            raise ValueError('field cannot be empty')
         return normalized
 
 
@@ -199,27 +198,27 @@ class PaginatedResult(BaseModel):
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 
 def new_feedback_id() -> str:
-    return f"fb_{uuid4().hex[:12]}"
+    return f'fb_{uuid4().hex[:12]}'
 
 
 def new_batch_id() -> str:
-    return f"batch_{uuid4().hex[:12]}"
+    return f'batch_{uuid4().hex[:12]}'
 
 
 def new_batch_item_id() -> str:
-    return f"dbi_{uuid4().hex[:12]}"
+    return f'dbi_{uuid4().hex[:12]}'
 
 
 def new_draft_id() -> str:
-    return f"draft_{uuid4().hex[:12]}"
+    return f'draft_{uuid4().hex[:12]}'
 
 
 def new_submission_id() -> str:
-    return f"sub_{uuid4().hex[:12]}"
+    return f'sub_{uuid4().hex[:12]}'
 
 
 def new_session_token() -> str:
@@ -227,19 +226,19 @@ def new_session_token() -> str:
 
 
 def new_login_attempt_id() -> str:
-    return f"la_{uuid4().hex[:12]}"
+    return f'la_{uuid4().hex[:12]}'
 
 
 class AdminLoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
 
-    @field_validator("username", "password")
+    @field_validator('username', 'password')
     @classmethod
     def validate_non_empty(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("field cannot be empty")
+            raise ValueError('field cannot be empty')
         return normalized
 
 

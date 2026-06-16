@@ -1,4 +1,4 @@
-import { inject, type Ref } from 'vue'
+import { inject } from 'vue'
 
 interface ToastApi {
   notify: (message: string) => void

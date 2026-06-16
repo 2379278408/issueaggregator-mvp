@@ -149,7 +149,10 @@
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .triage-tab span,
@@ -256,7 +259,10 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .triage-nav-card:hover,
@@ -417,7 +423,7 @@
 .feedback-composer::before,
 .duplicate-panel::before,
 .history-panel::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: 18px;
@@ -529,7 +535,10 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
 }
 
 .signal-card:hover,
@@ -760,7 +769,11 @@
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .audit-filter-chip:hover,
@@ -1147,7 +1160,11 @@
   color: var(--color-text);
   text-align: left;
   cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
 }
 
 .feedback-type-card::after {
@@ -1329,7 +1346,10 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .quick-template-card:hover,
@@ -1424,7 +1444,10 @@
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .related-id-chip,
@@ -1880,13 +1903,17 @@
   border-color: transparent;
   color: #ffffff;
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(17, 24, 20, 0.12), 0 0 0 1px rgba(124, 242, 156, 0.16) inset;
+  box-shadow:
+    0 10px 20px rgba(17, 24, 20, 0.12),
+    0 0 0 1px rgba(124, 242, 156, 0.16) inset;
   font-weight: 600;
 }
 
 .button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 22px rgba(17, 24, 20, 0.15), 0 0 0 1px rgba(124, 242, 156, 0.28) inset;
+  box-shadow:
+    0 12px 22px rgba(17, 24, 20, 0.15),
+    0 0 0 1px rgba(124, 242, 156, 0.28) inset;
 }
 
 .button:disabled {

@@ -59,10 +59,20 @@
 
     <div v-if="message" class="feedback-message">{{ message }}</div>
     <div class="studio-actions">
-      <button class="button button--secondary" type="button" :disabled="queueStatus !== 'pending' || creatingBatch" @click="$emit('createBatch')">
+      <button
+        class="button button--secondary"
+        type="button"
+        :disabled="queueStatus !== 'pending' || creatingBatch"
+        @click="$emit('createBatch')"
+      >
         {{ creatingBatch ? '创建中...' : isMixed ? '确认建批' : '创建批次' }}
       </button>
-      <button class="button" type="button" :disabled="!activeBatchId || integratingDraft" @click="$emit('integrateDraft')">
+      <button
+        class="button"
+        type="button"
+        :disabled="!activeBatchId || integratingDraft"
+        @click="$emit('integrateDraft')"
+      >
         {{ integratingDraft ? '生成中...' : '生成草稿' }}
       </button>
     </div>

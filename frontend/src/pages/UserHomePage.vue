@@ -1,8 +1,5 @@
 <template>
-  <AppShell
-    title="Issue Intake"
-    description="提交反馈，生成可追踪 Issue。"
-  >
+  <AppShell title="Issue Intake" description="提交反馈，生成可追踪 Issue。">
     <section class="intake-studio">
       <header class="intake-hero">
         <div>
@@ -30,7 +27,10 @@
           <form class="composer-form" @submit.prevent="submitFeedback">
             <section
               class="composer-stage feedback-type-picker"
-              :class="{ 'composer-stage--ready': Boolean(form.type), 'feedback-type-picker--ready': Boolean(form.type) }"
+              :class="{
+                'composer-stage--ready': Boolean(form.type),
+                'feedback-type-picker--ready': Boolean(form.type),
+              }"
               aria-labelledby="feedback-type-title"
             >
               <div class="feedback-type-picker__head">
@@ -57,7 +57,10 @@
               </div>
             </section>
 
-            <section class="composer-stage composer-stage--compact" :class="{ 'composer-stage--ready': hasValidRelatedId }">
+            <section
+              class="composer-stage composer-stage--compact"
+              :class="{ 'composer-stage--ready': hasValidRelatedId }"
+            >
               <div class="studio-section-head studio-section-head--compact">
                 <div>
                   <span>Step 2 / Topic Key</span>
@@ -66,51 +69,58 @@
                 <p>先确认这是哪个页面、流程或组件，系统会帮你对照已有 Issue。</p>
               </div>
 
-            <div class="composer-row composer-row--single">
-              <label class="field">
-                <span>关联标识</span>
-                <input v-model="form.related_id" class="input" placeholder="editor-copy-button" @blur="handleRelatedIdBlur" />
-                <small class="field-helper">用小写英文、数字和短横线，例如 github-submit-flow；空格和下划线会自动转成短横线。</small>
-              </label>
-            </div>
-
-            <div class="composer-support-row">
-              <div class="related-id-guide" aria-label="关联标识填写示例">
-                <div>
-                  <strong>怎么填关联标识</strong>
-                  <p>按页面、组件、接口或业务流程命名，使用小写英文、数字和短横线。</p>
-                </div>
-                <div class="related-id-examples">
-                  <button
-                    class="related-id-chip related-id-chip--primary"
-                    type="button"
-                    @click="applyRelatedExample(primaryRelatedExample)"
+              <div class="composer-row composer-row--single">
+                <label class="field">
+                  <span>关联标识</span>
+                  <input
+                    v-model="form.related_id"
+                    class="input"
+                    placeholder="editor-copy-button"
+                    @blur="handleRelatedIdBlur"
+                  />
+                  <small class="field-helper"
+                    >用小写英文、数字和短横线，例如 github-submit-flow；空格和下划线会自动转成短横线。</small
                   >
-                    {{ primaryRelatedExample }}
-                  </button>
-                  <button
-                    v-for="example in secondaryRelatedExamples"
-                    :key="example"
-                    class="related-id-chip"
-                    type="button"
-                    @click="applyRelatedExample(example)"
-                  >
-                    {{ example }}
-                  </button>
-                </div>
+                </label>
               </div>
 
-              <DuplicatePanel
-                :issues="duplicateIssues"
-                :tone="duplicateStateTone"
-                :title="duplicatePanelTitle"
-                :status-label="duplicateStatusLabel"
-                :action-title="duplicateActionTitle"
-                :summary="duplicateSummary"
-                :hint="duplicateHint"
-                :action-hint="duplicateActionHint"
-              />              
-            </div>
+              <div class="composer-support-row">
+                <div class="related-id-guide" aria-label="关联标识填写示例">
+                  <div>
+                    <strong>怎么填关联标识</strong>
+                    <p>按页面、组件、接口或业务流程命名，使用小写英文、数字和短横线。</p>
+                  </div>
+                  <div class="related-id-examples">
+                    <button
+                      class="related-id-chip related-id-chip--primary"
+                      type="button"
+                      @click="applyRelatedExample(primaryRelatedExample)"
+                    >
+                      {{ primaryRelatedExample }}
+                    </button>
+                    <button
+                      v-for="example in secondaryRelatedExamples"
+                      :key="example"
+                      class="related-id-chip"
+                      type="button"
+                      @click="applyRelatedExample(example)"
+                    >
+                      {{ example }}
+                    </button>
+                  </div>
+                </div>
+
+                <DuplicatePanel
+                  :issues="duplicateIssues"
+                  :tone="duplicateStateTone"
+                  :title="duplicatePanelTitle"
+                  :status-label="duplicateStatusLabel"
+                  :action-title="duplicateActionTitle"
+                  :summary="duplicateSummary"
+                  :hint="duplicateHint"
+                  :action-hint="duplicateActionHint"
+                />
+              </div>
             </section>
 
             <section class="composer-stage composer-stage--compact quick-template-panel" aria-label="快捷反馈模板">
@@ -136,7 +146,10 @@
               </div>
             </section>
 
-            <section class="composer-stage composer-stage--compact" :class="{ 'composer-stage--ready': Boolean(form.raw_content.trim()) }">
+            <section
+              class="composer-stage composer-stage--compact"
+              :class="{ 'composer-stage--ready': Boolean(form.raw_content.trim()) }"
+            >
               <div class="studio-section-head studio-section-head--compact">
                 <div>
                   <span>Step 3 / Core Message</span>
@@ -147,7 +160,12 @@
 
               <label class="field field--full composer-main-field">
                 <span>反馈内容</span>
-                <textarea v-model="form.raw_content" class="textarea textarea--editor" rows="8" placeholder="描述触发场景、具体表现和影响范围"></textarea>
+                <textarea
+                  v-model="form.raw_content"
+                  class="textarea textarea--editor"
+                  rows="8"
+                  placeholder="描述触发场景、具体表现和影响范围"
+                ></textarea>
               </label>
 
               <details class="composer-details">
@@ -155,11 +173,21 @@
                 <div class="composer-row">
                   <label class="field">
                     <span>期望行为</span>
-                    <textarea v-model="form.expected_behavior" class="textarea" rows="4" placeholder="希望系统如何表现"></textarea>
+                    <textarea
+                      v-model="form.expected_behavior"
+                      class="textarea"
+                      rows="4"
+                      placeholder="希望系统如何表现"
+                    ></textarea>
                   </label>
                   <label class="field">
                     <span>实际行为</span>
-                    <textarea v-model="form.actual_behavior" class="textarea" rows="4" placeholder="现在实际发生了什么"></textarea>
+                    <textarea
+                      v-model="form.actual_behavior"
+                      class="textarea"
+                      rows="4"
+                      placeholder="现在实际发生了什么"
+                    ></textarea>
                   </label>
                 </div>
                 <div class="context-capture">
@@ -209,25 +237,31 @@
           </form>
         </article>
 
-          <IntakeInspector
-            :type="form.type"
-            :type-label="selectedTypeLabel"
-            :has-valid-related-id="hasValidRelatedId"
-            :normalized-related-id="normalizedRelatedId"
-            :raw-content="form.raw_content.trim()"
-            :has-context="hasContextInfo"
-            :context-summary="contextSummaryText"
-            :issues="submittedIssues"
-            :loading="issuesLoading"
-            :history-message="historyMessage"
-            :history-summary-title="historySummaryTitle"
-            :history-summary-hint="historySummaryHint"
-            :empty-title="historyEmptyTitle"
-            :empty-hint="historyEmptyHint"
-            :keyword="filters.keyword"
-            :type-filter="filters.type"
-            @search="(k: string, t: string) => { filters.keyword = k; filters.type = t as any; loadSubmittedIssues() }"
-          />
+        <IntakeInspector
+          :type="form.type"
+          :type-label="selectedTypeLabel"
+          :has-valid-related-id="hasValidRelatedId"
+          :normalized-related-id="normalizedRelatedId"
+          :raw-content="form.raw_content.trim()"
+          :has-context="hasContextInfo"
+          :context-summary="contextSummaryText"
+          :issues="submittedIssues"
+          :loading="issuesLoading"
+          :history-message="historyMessage"
+          :history-summary-title="historySummaryTitle"
+          :history-summary-hint="historySummaryHint"
+          :empty-title="historyEmptyTitle"
+          :empty-hint="historyEmptyHint"
+          :keyword="filters.keyword"
+          :type-filter="filters.type"
+          @search="
+            (k: string, t: string) => {
+              filters.keyword = k
+              filters.type = t as any
+              loadSubmittedIssues()
+            }
+          "
+        />
       </section>
     </section>
   </AppShell>
@@ -330,7 +364,9 @@ const form = reactive<FeedbackCreatePayload>({
 
 const normalizedRelatedId = computed(() => form.related_id.trim())
 const selectedTypeLabel = computed(() => (form.type ? getTypeLabel(form.type) : ''))
-const hasContextInfo = computed(() => Boolean(form.page_url?.trim() || form.page_title?.trim() || form.environment_context?.trim()))
+const hasContextInfo = computed(() =>
+  Boolean(form.page_url?.trim() || form.page_title?.trim() || form.environment_context?.trim()),
+)
 const contextSummaryText = computed(() => {
   const segments = []
   if (form.page_url?.trim()) {
@@ -442,7 +478,9 @@ const duplicateStatusLabel = computed(() => {
 })
 const duplicateActionTitle = computed(() => {
   if (duplicateIssues.value.length) {
-    return duplicateMatchKind.value === 'exact' ? '先看已有记录，再决定是否补充新证据。' : '先确认是否属于同一主题，再决定是否继续提交。'
+    return duplicateMatchKind.value === 'exact'
+      ? '先看已有记录，再决定是否补充新证据。'
+      : '先确认是否属于同一主题，再决定是否继续提交。'
   }
   if (!normalizedRelatedId.value) {
     return '先填关联标识，系统会自动对照已有 Issue。'

@@ -1,15 +1,7 @@
 <template>
-  <AppShell
-    title="Issue Triage Studio"
-    description="整理反馈，生成 GitHub Issue 草稿。"
-    wide
-  >
+  <AppShell title="Issue Triage Studio" description="整理反馈，生成 GitHub Issue 草稿。" wide>
     <section v-if="!isAdminUnlocked" class="admin-auth-screen">
-      <AdminLoginCard
-        :auth-message="adminAuthMessage"
-        :is-logging-in="isLoggingIn"
-        @submit="unlockAdmin"
-      />
+      <AdminLoginCard :auth-message="adminAuthMessage" :is-logging-in="isLoggingIn" @submit="unlockAdmin" />
     </section>
 
     <section v-else class="triage-studio">
@@ -63,139 +55,139 @@
             />
 
             <div class="triage-workbench">
-          <ReviewPanel
-            :items="reviewItems"
-            :headline="reviewHeadline"
-            :description="reviewDescription"
-            :decision="reviewDecision"
-            :decision-tone-class="reviewDecisionToneClass"
-            :primary-related-id="activeReferenceRelatedId"
-            :missing-count="reviewMissingCount"
-            :message="batchMessage"
-            :creating-batch="creatingBatch"
-            :integrating-draft="integratingDraft"
-            :queue-status="queueStatus"
-            :active-batch-id="activeBatchId"
-            :is-mixed="batchSummary.isMixed"
-            @create-batch="createBatch"
-            @integrate-draft="integrateDraft"
-          />
+              <ReviewPanel
+                :items="reviewItems"
+                :headline="reviewHeadline"
+                :description="reviewDescription"
+                :decision="reviewDecision"
+                :decision-tone-class="reviewDecisionToneClass"
+                :primary-related-id="activeReferenceRelatedId"
+                :missing-count="reviewMissingCount"
+                :message="batchMessage"
+                :creating-batch="creatingBatch"
+                :integrating-draft="integratingDraft"
+                :queue-status="queueStatus"
+                :active-batch-id="activeBatchId"
+                :is-mixed="batchSummary.isMixed"
+                @create-batch="createBatch"
+                @integrate-draft="integrateDraft"
+              />
 
-          <DraftEditor
-            :active-batch-id="activeBatchId"
-            :current-draft-id="currentDraftId"
-            :draft-form="{ title: draftForm.title, body_markdown: draftForm.body_markdown }"
-            :submission-result="submissionResult"
-            :status-label="draftStatusLabel"
-            :status-description="draftStatusDescription"
-            :related-id-summary="draftRelatedIdSummary"
-            :updated-at-label="draftUpdatedAtLabel"
-            :editor-headline="draftEditorHeadline"
-            :editor-hint="draftEditorHint"
-            :show-checklist="showDraftSubmissionChecklist"
-            :checklist-summary="draftSubmissionChecklistSummary"
-            :review-items="reviewItems"
-            :related-id-count="batchSummary.relatedIdCount"
-            :title-length="draftTitleLength"
-            :body-length="draftBodyLength"
-            :section-count="draftSectionCount"
-            :can-submit="draftCanSubmit"
-            :message="draftMessage"
-            :saving-draft="savingDraft"
-            :submitting-draft="submittingDraft"
-            :integrating-draft="integratingDraft"
-            @update:draft-form="onDraftFormUpdate"
-            @integrate-draft="integrateDraft"
-            @save-draft="saveDraft"
-            @submit-draft="submitDraftToGithub"
-          />
+              <DraftEditor
+                :active-batch-id="activeBatchId"
+                :current-draft-id="currentDraftId"
+                :draft-form="{ title: draftForm.title, body_markdown: draftForm.body_markdown }"
+                :submission-result="submissionResult"
+                :status-label="draftStatusLabel"
+                :status-description="draftStatusDescription"
+                :related-id-summary="draftRelatedIdSummary"
+                :updated-at-label="draftUpdatedAtLabel"
+                :editor-headline="draftEditorHeadline"
+                :editor-hint="draftEditorHint"
+                :show-checklist="showDraftSubmissionChecklist"
+                :checklist-summary="draftSubmissionChecklistSummary"
+                :review-items="reviewItems"
+                :related-id-count="batchSummary.relatedIdCount"
+                :title-length="draftTitleLength"
+                :body-length="draftBodyLength"
+                :section-count="draftSectionCount"
+                :can-submit="draftCanSubmit"
+                :message="draftMessage"
+                :saving-draft="savingDraft"
+                :submitting-draft="submittingDraft"
+                :integrating-draft="integratingDraft"
+                @update:draft-form="onDraftFormUpdate"
+                @integrate-draft="integrateDraft"
+                @save-draft="saveDraft"
+                @submit-draft="submitDraftToGithub"
+              />
 
-          <AuditPanel
-            :events="auditEvents"
-            :filter-options="auditFilterOptions"
-            :time-range-options="auditTimeRangeOptions"
-            :active-filter="activeAuditFilter"
-            :active-time-range="activeAuditTimeRange"
-            :keyword-input="auditKeywordInput"
-            :loading="loadingAuditEvents"
-            :message="auditMessage"
-            @refresh="loadAuditEvents"
-            @apply-filter="applyAuditFilter"
-            @apply-time-range="applyAuditTimeRange"
-            @apply-keyword="applyAuditKeyword"
-            @update:keyword-input="onAuditKeywordInput"
-          />
-        </div>
+              <AuditPanel
+                :events="auditEvents"
+                :filter-options="auditFilterOptions"
+                :time-range-options="auditTimeRangeOptions"
+                :active-filter="activeAuditFilter"
+                :active-time-range="activeAuditTimeRange"
+                :keyword-input="auditKeywordInput"
+                :loading="loadingAuditEvents"
+                :message="auditMessage"
+                @refresh="loadAuditEvents"
+                @apply-filter="applyAuditFilter"
+                @apply-time-range="applyAuditTimeRange"
+                @apply-keyword="applyAuditKeyword"
+                @update:keyword-input="onAuditKeywordInput"
+              />
+            </div>
           </section>
         </section>
 
         <aside class="triage-context" aria-label="当前工作上下文">
-        <section class="triage-context__panel">
-          <div class="studio-section-head studio-section-head--stacked">
-            <div>
-              <span>Workflow Rail</span>
-              <h3>推进状态</h3>
+          <section class="triage-context__panel">
+            <div class="studio-section-head studio-section-head--stacked">
+              <div>
+                <span>Workflow Rail</span>
+                <h3>推进状态</h3>
+              </div>
+              <p>始终查看当前工作流停在哪一步，以及下一步动作是什么。</p>
             </div>
-            <p>始终查看当前工作流停在哪一步，以及下一步动作是什么。</p>
-          </div>
-          <div class="workflow-rail">
-            <article v-for="step in workflowSteps" :key="step.index" class="workflow-step" :class="step.state">
-              <span>{{ step.index }}</span>
-              <strong>{{ step.label }}</strong>
-            </article>
-          </div>
-        </section>
+            <div class="workflow-rail">
+              <article v-for="step in workflowSteps" :key="step.index" class="workflow-step" :class="step.state">
+                <span>{{ step.index }}</span>
+                <strong>{{ step.label }}</strong>
+              </article>
+            </div>
+          </section>
 
-        <section class="triage-context__panel triage-context__panel--accent">
-          <div class="studio-section-head studio-section-head--stacked">
-            <div>
-              <span>Live Context</span>
-              <h3>{{ contextPanelTitle }}</h3>
+          <section class="triage-context__panel triage-context__panel--accent">
+            <div class="studio-section-head studio-section-head--stacked">
+              <div>
+                <span>Live Context</span>
+                <h3>{{ contextPanelTitle }}</h3>
+              </div>
+              <p>{{ contextPanelDescription }}</p>
             </div>
-            <p>{{ contextPanelDescription }}</p>
-          </div>
-          <div class="triage-context__facts">
-            <article>
-              <span>当前队列</span>
-              <strong>{{ queueHeading }}</strong>
-            </article>
-            <article>
-              <span>主关联标识</span>
-              <strong>{{ contextPrimaryRelatedId }}</strong>
-            </article>
-            <article>
-              <span>当前条目数</span>
-              <strong>{{ reviewItems.length }}</strong>
-            </article>
-            <article>
-              <span>缺失字段</span>
-              <strong>{{ reviewMissingCount }}</strong>
-            </article>
-          </div>
-          <div class="triage-context__subhead">
-            <span>Batch Snapshot</span>
-            <strong>批次速览</strong>
-          </div>
-          <dl class="triage-context__snapshot">
-            <div>
-              <dt>批次 ID</dt>
-              <dd>{{ activeBatchId || '待创建' }}</dd>
+            <div class="triage-context__facts">
+              <article>
+                <span>当前队列</span>
+                <strong>{{ queueHeading }}</strong>
+              </article>
+              <article>
+                <span>主关联标识</span>
+                <strong>{{ contextPrimaryRelatedId }}</strong>
+              </article>
+              <article>
+                <span>当前条目数</span>
+                <strong>{{ reviewItems.length }}</strong>
+              </article>
+              <article>
+                <span>缺失字段</span>
+                <strong>{{ reviewMissingCount }}</strong>
+              </article>
             </div>
-            <div>
-              <dt>草稿状态</dt>
-              <dd>{{ draftStatusLabel }}</dd>
+            <div class="triage-context__subhead">
+              <span>Batch Snapshot</span>
+              <strong>批次速览</strong>
             </div>
-            <div>
-              <dt>草稿标识</dt>
-              <dd>{{ draftRelatedIdSummary }}</dd>
-            </div>
-            <div>
-              <dt>最近更新</dt>
-              <dd>{{ draftUpdatedAtLabel }}</dd>
-            </div>
-          </dl>
-        </section>
-      </aside>
+            <dl class="triage-context__snapshot">
+              <div>
+                <dt>批次 ID</dt>
+                <dd>{{ activeBatchId || '待创建' }}</dd>
+              </div>
+              <div>
+                <dt>草稿状态</dt>
+                <dd>{{ draftStatusLabel }}</dd>
+              </div>
+              <div>
+                <dt>草稿标识</dt>
+                <dd>{{ draftRelatedIdSummary }}</dd>
+              </div>
+              <div>
+                <dt>最近更新</dt>
+                <dd>{{ draftUpdatedAtLabel }}</dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
       </section>
     </section>
   </AppShell>
@@ -236,12 +228,10 @@ import {
   type PaginatedResponse,
 } from '../services/api'
 
-const typeLabelMap: Record<string, string> = {
-  bug: '缺陷', feature: '新功能', enhancement: '优化', question: '问题',
-}
-
 const statusLabelMap: Record<string, QueueStatus> & Record<string, string> = {
-  pending: '待处理', grouped: '已分组', submitted: '已提交',
+  pending: '待处理',
+  grouped: '已分组',
+  submitted: '已提交',
 }
 
 const pendingItems = ref<FeedbackItem[]>([])
@@ -270,8 +260,6 @@ const activeAuditTimeRange = ref<AuditTimeRange>('all')
 const auditKeyword = ref('')
 const auditKeywordInput = ref('')
 const isAdminUnlocked = ref(hasAdminToken())
-const adminUsernameInput = ref('')
-const adminPasswordInput = ref('')
 const adminUsername = ref<string | null>(null)
 const isLoggingIn = ref(false)
 const adminAuthMessage = ref('')
@@ -361,7 +349,9 @@ const activeReferenceRelatedId = computed(() => {
   return activeReferenceItem.value?.related_id || ''
 })
 
-const reviewMissingCount = computed(() => reviewItems.value.reduce((total, item) => total + getMissingFieldCount(item), 0))
+const reviewMissingCount = computed(() =>
+  reviewItems.value.reduce((total, item) => total + getMissingFieldCount(item), 0),
+)
 
 const reviewDecision = computed(() => {
   let title: string, description: string
@@ -402,7 +392,8 @@ const draftStatusLabel = computed(() => {
 })
 
 const draftStatusDescription = computed(() => {
-  if (submissionResult.value) return `GitHub Issue #${submissionResult.value.issue_number} 已创建，可继续回看本次处理记录。`
+  if (submissionResult.value)
+    return `GitHub Issue #${submissionResult.value.issue_number} 已创建，可继续回看本次处理记录。`
   if (currentDraftId.value) return '草稿已经生成。这里保留当前批次的唯一编辑上下文，适合人工修订后直接提交。'
   if (activeBatchId.value) return '批次已经创建，下一步生成结构化草稿。'
   return '先从左侧队列选择反馈并创建批次，这里会进入草稿编辑状态。'
@@ -448,7 +439,9 @@ const draftSubmissionChecklistSummary = computed(() => {
   return `当前草稿关联 ${draftRelatedIdSummary.value}，覆盖 ${reviewItems.value.length} 条反馈。保存后可直接提交到 GitHub。`
 })
 
-const draftCanSubmit = computed(() => Boolean(currentDraftId.value) && Boolean(draftForm.title.trim()) && Boolean(draftForm.body_markdown.trim()))
+const draftCanSubmit = computed(
+  () => Boolean(currentDraftId.value) && Boolean(draftForm.title.trim()) && Boolean(draftForm.body_markdown.trim()),
+)
 
 const queueHeading = computed(() => statusLabelMap[queueStatus.value] || queueStatus.value)
 
@@ -465,9 +458,13 @@ const reviewHeadline = computed(() => {
 
 const reviewDescription = computed(() => {
   if (queueStatus.value === 'pending') {
-    return selectedItems.value.length ? '确认这些反馈是否属于同一主题，再创建批次。' : '从左侧队列中选择待处理反馈，这里会显示原始内容和补充信息。'
+    return selectedItems.value.length
+      ? '确认这些反馈是否属于同一主题，再创建批次。'
+      : '从左侧队列中选择待处理反馈，这里会显示原始内容和补充信息。'
   }
-  return reviewItems.value.length ? '这里展示当前批次中的全部反馈，便于统一回看聚合结果。' : '从左侧已分组或已提交队列选择一条记录，这里会显示详情。'
+  return reviewItems.value.length
+    ? '这里展示当前批次中的全部反馈，便于统一回看聚合结果。'
+    : '从左侧已分组或已提交队列选择一条记录，这里会显示详情。'
 })
 
 const workflowSteps = computed(() => [
@@ -500,12 +497,14 @@ const contextPanelTitle = computed(() => {
 
 const contextPanelDescription = computed(() => {
   if (activeAdminSection.value === 'audit') return '这里主要用于确认管理员操作是否完整落库，以及近期是否存在异常鉴权。'
-  if (activeAdminSection.value === 'draft') return submissionResult.value
-    ? '当前批次已经提交到 GitHub，可以继续检查结果或切换到新的批次。'
-    : '草稿编辑区已经接管主流程，接下来重点确认标题、正文和提交状态。'
-  if (activeAdminSection.value === 'review') return reviewItems.value.length
-    ? '当前区块用于判断这些反馈是否属于同一主题，并确定是否适合建批。'
-    : '先从左侧队列中勾选或选中反馈，系统才会生成主题判断。'
+  if (activeAdminSection.value === 'draft')
+    return submissionResult.value
+      ? '当前批次已经提交到 GitHub，可以继续检查结果或切换到新的批次。'
+      : '草稿编辑区已经接管主流程，接下来重点确认标题、正文和提交状态。'
+  if (activeAdminSection.value === 'review')
+    return reviewItems.value.length
+      ? '当前区块用于判断这些反馈是否属于同一主题，并确定是否适合建批。'
+      : '先从左侧队列中勾选或选中反馈，系统才会生成主题判断。'
   return queueStatus.value === 'pending'
     ? '优先在这里完成勾选和粗分组，避免把太多信息直接堆进后续编辑区。'
     : '当前处于历史回看模式，重点是沿着已分组或已提交链路快速回到对应草稿。'
@@ -615,10 +614,14 @@ async function focusAdminSection(section: AdminSection): Promise<void> {
   activeAdminSection.value = section
   if (typeof window === 'undefined' || typeof document === 'undefined') return
   await nextTick()
-  const elementId = section === 'queue' ? 'queue-panel'
-    : section === 'review' ? 'review-panel'
-    : section === 'draft' ? 'draft-panel'
-    : 'audit-panel'
+  const elementId =
+    section === 'queue'
+      ? 'queue-panel'
+      : section === 'review'
+        ? 'review-panel'
+        : section === 'draft'
+          ? 'draft-panel'
+          : 'audit-panel'
   const element = document.getElementById(elementId)
   if (!element) return
   element.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -739,7 +742,9 @@ function isAuthFailureStatus(status: number | undefined): boolean {
 async function loadFeedbackByStatus(status: QueueStatus): Promise<FeedbackItem[]> {
   const response = await apiGet<PaginatedResponse<FeedbackItem>>(buildAdminApiPath(`/feedback?status=${status}`))
   if (!response.success) {
-    throw Object.assign(new Error(response.message || 'Failed to load feedback'), { httpStatus: getResponseErrorStatus(response) })
+    throw Object.assign(new Error(response.message || 'Failed to load feedback'), {
+      httpStatus: getResponseErrorStatus(response),
+    })
   }
   return response.data.items
 }
@@ -753,8 +758,13 @@ async function loadAuditEvents(): Promise<void> {
     if (activeAuditFilter.value !== 'all') searchParams.set('event_type', activeAuditFilter.value)
     if (activeAuditTimeRange.value !== 'all') searchParams.set('time_range', activeAuditTimeRange.value)
     if (auditKeyword.value) searchParams.set('keyword', auditKeyword.value)
-    const response = await apiGet<PaginatedResponse<AuditEventRecord>>(buildAdminApiPath(`/audit-events?${searchParams.toString()}`))
-    if (response.success) { auditEvents.value = response.data.items; return }
+    const response = await apiGet<PaginatedResponse<AuditEventRecord>>(
+      buildAdminApiPath(`/audit-events?${searchParams.toString()}`),
+    )
+    if (response.success) {
+      auditEvents.value = response.data.items
+      return
+    }
     auditEvents.value = []
     auditMessage.value = response.message || '审计事件加载失败，请稍后重试。'
   } catch {
@@ -839,9 +849,10 @@ async function unlockAdmin(username: string, password: string): Promise<void> {
   try {
     const result = await adminLogin(username, password)
     if (!result.success) {
-      const message = result.error_code === 'ADMIN_LOGIN_COOLDOWN_ACTIVE'
-        ? result.message || '登录冷却中，请稍后重试。'
-        : '用户名或密码错误。'
+      const message =
+        result.error_code === 'ADMIN_LOGIN_COOLDOWN_ACTIVE'
+          ? result.message || '登录冷却中，请稍后重试。'
+          : '用户名或密码错误。'
       adminAuthMessage.value = message
       return
     }
@@ -859,7 +870,9 @@ async function unlockAdmin(username: string, password: string): Promise<void> {
 }
 
 async function handleAdminLogout(): Promise<void> {
-  try { await adminLogout() } finally {
+  try {
+    await adminLogout()
+  } finally {
     clearAdminToken()
     isAdminUnlocked.value = false
     adminUsername.value = null
@@ -869,12 +882,21 @@ async function handleAdminLogout(): Promise<void> {
 }
 
 async function createBatch(): Promise<void> {
-  if (!selectedIds.value.length) { batchMessage.value = '请先选择至少一条反馈。'; return }
+  if (!selectedIds.value.length) {
+    batchMessage.value = '请先选择至少一条反馈。'
+    return
+  }
   creatingBatch.value = true
   batchMessage.value = ''
-  const payload: DraftBatchCreatePayload = { feedback_item_ids: selectedIds.value, confirm_mixed_related_ids: batchSummary.value.isMixed }
+  const payload: DraftBatchCreatePayload = {
+    feedback_item_ids: selectedIds.value,
+    confirm_mixed_related_ids: batchSummary.value.isMixed,
+  }
   try {
-    const response = await apiPost<DraftBatchCreateResponse, DraftBatchCreatePayload>(buildAdminApiPath('/draft-batches'), payload)
+    const response = await apiPost<DraftBatchCreateResponse, DraftBatchCreatePayload>(
+      buildAdminApiPath('/draft-batches'),
+      payload,
+    )
     if (response.success) {
       batchMessage.value = `批次创建成功：${response.data.id}`
       activeBatchId.value = response.data.id
@@ -944,17 +966,24 @@ async function restoreAdminContextFromRoute(): Promise<void> {
       return
     }
   }
-  if (draftId || batchId) { activeReferenceId.value = ''; resetProcessingContext() }
+  if (draftId || batchId) {
+    activeReferenceId.value = ''
+    resetProcessingContext()
+  }
   syncAdminContextToRoute()
 }
 
 async function integrateDraft(): Promise<void> {
-  if (!activeBatchId.value) { batchMessage.value = '请先创建批次。'; return }
+  if (!activeBatchId.value) {
+    batchMessage.value = '请先创建批次。'
+    return
+  }
   integratingDraft.value = true
   draftMessage.value = ''
   try {
     const response = await apiPost<DraftIntegrateResponse, Record<string, never>>(
-      buildAdminApiPath(`/draft-batches/${activeBatchId.value}/integrate`), {},
+      buildAdminApiPath(`/draft-batches/${activeBatchId.value}/integrate`),
+      {},
     )
     if (response.success) await loadDraft(response.data.draft_id)
     else draftMessage.value = response.message || '草稿生成失败'
@@ -966,21 +995,37 @@ async function integrateDraft(): Promise<void> {
 }
 
 async function saveDraft(): Promise<void> {
-  if (!currentDraftId.value) { draftMessage.value = '请先生成草稿。'; return }
+  if (!currentDraftId.value) {
+    draftMessage.value = '请先生成草稿。'
+    return
+  }
   savingDraft.value = true
   const payload: DraftUpdatePayload = { title: draftForm.title, body_markdown: draftForm.body_markdown }
   try {
     const response = await apiPut<{ id: string; status: string; updated_at: string }, DraftUpdatePayload>(
-      buildAdminApiPath(`/drafts/${currentDraftId.value}`), payload,
+      buildAdminApiPath(`/drafts/${currentDraftId.value}`),
+      payload,
     )
     if (response.success) {
       currentDraftRecord.value = {
-        ...(currentDraftRecord.value || { id: currentDraftId.value, batch_id: activeBatchId.value, title: draftForm.title, body_markdown: draftForm.body_markdown, related_id_summary: draftRelatedIdSummary.value, status: response.data.status, updated_at: response.data.updated_at }),
-        title: draftForm.title, body_markdown: draftForm.body_markdown,
-        status: response.data.status, updated_at: response.data.updated_at,
+        ...(currentDraftRecord.value || {
+          id: currentDraftId.value,
+          batch_id: activeBatchId.value,
+          title: draftForm.title,
+          body_markdown: draftForm.body_markdown,
+          related_id_summary: draftRelatedIdSummary.value,
+          status: response.data.status,
+          updated_at: response.data.updated_at,
+        }),
+        title: draftForm.title,
+        body_markdown: draftForm.body_markdown,
+        status: response.data.status,
+        updated_at: response.data.updated_at,
       }
     }
-    draftMessage.value = response.success ? `草稿保存成功，更新时间 ${response.data.updated_at}` : response.message || '草稿保存失败'
+    draftMessage.value = response.success
+      ? `草稿保存成功，更新时间 ${response.data.updated_at}`
+      : response.message || '草稿保存失败'
   } catch {
     draftMessage.value = '草稿保存失败，请检查网络后重试。'
   } finally {
@@ -989,11 +1034,15 @@ async function saveDraft(): Promise<void> {
 }
 
 async function submitDraftToGithub(): Promise<void> {
-  if (!currentDraftId.value) { draftMessage.value = '请先生成草稿。'; return }
+  if (!currentDraftId.value) {
+    draftMessage.value = '请先生成草稿。'
+    return
+  }
   submittingDraft.value = true
   try {
     const response = await apiPost<DraftSubmitResponse, Record<string, never>>(
-      buildAdminApiPath(`/drafts/${currentDraftId.value}/submit`), {},
+      buildAdminApiPath(`/drafts/${currentDraftId.value}/submit`),
+      {},
     )
     if (response.success) {
       submissionResult.value = response.data
@@ -1020,14 +1069,19 @@ function setupSectionObserver(): void {
   ]
   sectionObserver = new IntersectionObserver(
     (entries) => {
-      const visibleEntry = entries.filter((entry) => entry.isIntersecting).sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
+      const visibleEntry = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
       if (!visibleEntry) return
       const matchedSection = sections.find((item) => item.id === visibleEntry.target.id)
       if (matchedSection) activeAdminSection.value = matchedSection.section
     },
     { threshold: [0.35, 0.55, 0.75], rootMargin: '-10% 0px -45% 0px' },
   )
-  sections.forEach((item) => { const element = document.getElementById(item.id); if (element) sectionObserver?.observe(element) })
+  sections.forEach((item) => {
+    const element = document.getElementById(item.id)
+    if (element) sectionObserver?.observe(element)
+  })
 }
 
 onMounted(async () => {

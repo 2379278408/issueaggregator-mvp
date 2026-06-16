@@ -62,7 +62,10 @@ describe('api service', () => {
   })
 
   it('returns a failure envelope when fetch rejects', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.reject(new Error('offline'))))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.reject(new Error('offline'))),
+    )
 
     const response = await apiGet('/api/issues/submitted')
 
