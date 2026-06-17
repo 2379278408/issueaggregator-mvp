@@ -2718,6 +2718,10 @@
     grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1fr);
   }
 
+  .triage-layout.admin-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
   .triage-context {
     grid-column: 1 / -1;
     position: static;
