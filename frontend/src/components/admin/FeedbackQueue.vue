@@ -42,10 +42,10 @@
     <section class="triage-sidebar__panel">
       <div class="studio-section-head studio-section-head--stacked">
         <div>
-          <span>Studio Nav</span>
-          <h3>工作步骤</h3>
+          <span>Workbench Nav</span>
+          <h3>主面板入口</h3>
         </div>
-        <p>按照队列、审阅、草稿、审计的顺序推进当前处理链路。</p>
+        <p>左侧负责切换处理链路，中间主区只保留当前需要聚焦的一块。</p>
       </div>
       <div class="triage-sidebar__nav-list">
         <button
@@ -74,15 +74,6 @@
         >
           <div><span>03</span><strong>草稿编辑</strong></div>
           <small>{{ currentDraftId ? '可提交' : '待生成' }}</small>
-        </button>
-        <button
-          class="triage-nav-card"
-          :class="{ 'is-active': activeSection === 'audit' }"
-          type="button"
-          @click="$emit('focusSection', 'audit')"
-        >
-          <div><span>04</span><strong>审计记录</strong></div>
-          <small>{{ auditEventCount }} 条</small>
         </button>
       </div>
     </section>
@@ -168,9 +159,9 @@ const props = defineProps<{
   description: string
   allSelected: boolean
   activeSection: AdminSection
+  activeItemId: string
   reviewItemCount: number
   currentDraftId: string
-  auditEventCount: number
 }>()
 
 defineEmits<{
@@ -212,6 +203,6 @@ function describeTime(item: FeedbackItem): string {
 
 function isActive(item: FeedbackItem): boolean {
   if (props.queueStatus === 'pending') return props.selectedIds.includes(item.id)
-  return false
+  return props.activeItemId === item.id
 }
 </script>

@@ -1,6 +1,6 @@
 <template>
   <section id="audit-panel" class="audit-stream audit-stream--secondary">
-    <header class="studio-section-head">
+    <header class="studio-section-head studio-section-head--compact">
       <div>
         <span>Security Events</span>
         <h3>最近审计事件</h3>
@@ -15,52 +15,54 @@
       </button>
     </div>
 
-    <div class="audit-filters">
-      <button
-        v-for="option in filterOptions"
-        :key="option.value"
-        class="audit-filter-chip"
-        :class="{ 'is-active': activeFilter === option.value }"
-        type="button"
-        :disabled="loading"
-        @click="$emit('applyFilter', option.value)"
-      >
-        {{ option.label }}
-      </button>
-    </div>
+    <section class="audit-toolbar" aria-label="审计筛选与检索">
+      <div class="audit-filters audit-filters--compact">
+        <button
+          v-for="option in filterOptions"
+          :key="option.value"
+          class="audit-filter-chip"
+          :class="{ 'is-active': activeFilter === option.value }"
+          type="button"
+          :disabled="loading"
+          @click="$emit('applyFilter', option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
 
-    <div class="audit-filters audit-filters--time">
-      <button
-        v-for="option in timeRangeOptions"
-        :key="option.value"
-        class="audit-filter-chip"
-        :class="{ 'is-active': activeTimeRange === option.value }"
-        type="button"
-        :disabled="loading"
-        @click="$emit('applyTimeRange', option.value)"
-      >
-        {{ option.label }}
-      </button>
-    </div>
+      <div class="audit-filters audit-filters--time audit-filters--compact">
+        <button
+          v-for="option in timeRangeOptions"
+          :key="option.value"
+          class="audit-filter-chip"
+          :class="{ 'is-active': activeTimeRange === option.value }"
+          type="button"
+          :disabled="loading"
+          @click="$emit('applyTimeRange', option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
 
-    <div class="audit-search">
-      <input
-        v-model="localKeyword"
-        class="input"
-        type="text"
-        placeholder="按 IP、路径、动作或资源检索"
-        :disabled="loading"
-        @keydown.enter.prevent="$emit('applyKeyword', localKeyword)"
-      />
-      <button
-        class="button button--quiet button--compact"
-        type="button"
-        :disabled="loading"
-        @click="$emit('applyKeyword', localKeyword)"
-      >
-        检索
-      </button>
-    </div>
+      <div class="audit-search audit-search--compact">
+        <input
+          v-model="localKeyword"
+          class="input"
+          type="text"
+          placeholder="按 IP、路径、动作或资源检索"
+          :disabled="loading"
+          @keydown.enter.prevent="$emit('applyKeyword', localKeyword)"
+        />
+        <button
+          class="button button--quiet button--compact"
+          type="button"
+          :disabled="loading"
+          @click="$emit('applyKeyword', localKeyword)"
+        >
+          检索
+        </button>
+      </div>
+    </section>
 
     <div v-if="message" class="feedback-message feedback-message--subtle">{{ message }}</div>
     <div class="audit-list">
@@ -107,7 +109,6 @@ defineEmits<{
   applyFilter: [value: AuditEventFilter]
   applyTimeRange: [value: AuditTimeRange]
   applyKeyword: [value: string]
-  'update:keywordInput': [value: string]
 }>()
 
 const localKeyword = ref(props.keywordInput)

@@ -11,7 +11,6 @@ router = APIRouter(prefix=settings.api_base_path, tags=['health'])
 
 @router.get('/health')
 def health_check() -> dict[str, object]:
-    settings = get_settings()
     return success_response(
         {
             'status': 'ok',

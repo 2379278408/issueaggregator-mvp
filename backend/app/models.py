@@ -10,7 +10,6 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator
 
 RELATED_ID_PATTERN = r'^[a-z0-9]+(?:-[a-z0-9]+)*$'
-FEEDBACK_ID_PATTERN = r'^fb_[a-f0-9]{12}$'
 BATCH_ID_PATTERN = r'^batch_[a-f0-9]{12}$'
 DRAFT_ID_PATTERN = r'^draft_[a-f0-9]{12}$'
 FeedbackType = Literal['bug', 'feature', 'enhancement', 'question']
@@ -140,15 +139,6 @@ class FeedbackRecord(BaseModel):
     submitted_at: str | None
 
 
-class SubmittedIssueRecord(BaseModel):
-    issue_number: int
-    title: str
-    issue_url: str
-    related_id: str
-    type: FeedbackType
-    submitted_at: str
-
-
 class DraftBatchRecord(BaseModel):
     id: str
     status: DraftBatchStatus
@@ -190,15 +180,12 @@ class SubmissionRecord(BaseModel):
     error_summary: str | None
 
 
-class PaginatedResult(BaseModel):
-    items: list[dict]
-    page: int
-    page_size: int
-    total: int
+def datetime_to_iso(dt: datetime) -> str:
+    return dt.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    return datetime_to_iso(datetime.now(timezone.utc))
 
 
 def new_feedback_id() -> str:
@@ -225,10 +212,6 @@ def new_session_token() -> str:
     return uuid4().hex + uuid4().hex
 
 
-def new_login_attempt_id() -> str:
-    return f'la_{uuid4().hex[:12]}'
-
-
 class AdminLoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
@@ -240,13 +223,6 @@ class AdminLoginPayload(BaseModel):
         if not normalized:
             raise ValueError('field cannot be empty')
         return normalized
-
-
-class AdminLoginResult(BaseModel):
-    success: bool
-    session_id: str | None = None
-    username: str | None = None
-    session_expires_at: str | None = None
 
 
 class AdminSessionStatus(BaseModel):

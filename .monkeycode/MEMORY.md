@@ -60,3 +60,40 @@
 - Category: 测试方法
 - Instructions:
   - 管理员登录、冷却、会话恢复和登出失效回归命令为 `cd backend && python3 tests/e2e_admin_session_flow.py`。
+
+[后台浏览器验收命令]
+- Date: 2026-06-17
+- Context: Agent 在补管理工作台浏览器端到端验收脚本时发现
+- Category: 测试方法
+- Instructions:
+  - 浏览器级后台验收命令为 `cd frontend && ADMIN_E2E_URL=<后台预览地址> ADMIN_E2E_USERNAME=<用户名> ADMIN_E2E_PASSWORD=<密码> npm run e2e:admin`。
+  - 若需要把草稿真实提交到 GitHub，可额外附加 `ADMIN_E2E_SUBMIT=true`。
+
+[全链路浏览器 E2E 命令]
+- Date: 2026-06-18
+- Context: Agent 在补全链路浏览器端到端验收脚本（反馈→整理→AI草稿→编辑→保存→审计）时发现
+- Category: 测试方法
+- Instructions:
+  - 全链路浏览器 E2E 命令为 `cd frontend && PIPELINE_E2E_URL=<API地址> PIPELINE_E2E_ADMIN_ROUTE=<路由slug> npm run e2e:pipeline`。
+  - 若需真实提交 GitHub，附加 `PIPELINE_E2E_SUBMIT=true`。
+  - 公开反馈 API 有 IP 日限流 5 次，脚本内置限流回退机制。
+  - 队列为空时脚本自动切换到已分组队列继续测试。
+
+[e2e-pipeline skill]
+- Date: 2026-06-18
+- Context: Agent 创建 e2e-pipeline skill 用于封装 E2E 测试工作流
+- Category: 工作流协作
+- Instructions:
+  - 当需要浏览器级 E2E 测试时，使用 `/e2e-pipeline` skill。
+  - Skill 包含 SKILL.md（快速启动、配置参考、模式参考）、references/testing-guide.md（详细容错模式、断言模式）、scripts/run-e2e.sh（串行执行单测→构建→E2E）。
+
+[goal skill]
+- Date: 2026-06-19
+- Context: Agent 安装 goal skill 提供会话级目标驱动开发能力
+- Category: 工作流协作
+- Instructions:
+  - 使用 `/goal <objective> --verify "<cmd>" --max-turns N` 设定目标驱动开发循环。
+  - 每轮自动 checkpoint、验证、反循环检测（3 轮无进展自动暂停）。
+  - 支持 `/goal status` / `pause` / `resume` / `clear`。
+  - 状态文件位于 `.monkeycode/goal/current.json`。
+  - goal-state.sh 位于 `.opencode/skills/goal/goal-state.sh`。

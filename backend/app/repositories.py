@@ -22,6 +22,7 @@ from .models import (
     FeedbackRecord,
     FeedbackStatus,
     SubmissionRecord,
+    datetime_to_iso,
     new_batch_id,
     new_batch_item_id,
     new_draft_id,
@@ -32,7 +33,11 @@ from .models import (
 
 
 class RepositoryError(ValueError):
-    pass
+    error_code: str | None
+
+    def __init__(self, message: str, *, error_code: str | None = None) -> None:
+        super().__init__(message)
+        self.error_code = error_code
 
 
 class AuditEventRepository:
@@ -380,7 +385,7 @@ class DraftBatchRepository:
                         (record.id, record.batch_id, record.feedback_item_id),
                     )
                 except sqlite3.IntegrityError as exc:
-                    raise RepositoryError(f'Feedback item already belongs to an active batch: {feedback_id}') from exc
+                    raise RepositoryError(f'Feedback item already belongs to an active batch: {feedback_id}', error_code='FEEDBACK_ALREADY_GROUPED') from exc
                 records.append(record)
         return records
 
@@ -435,11 +440,11 @@ class DraftBatchService:
         feedback_items = self.feedback_repository.get_feedback_by_ids(feedback_ids)
 
         if not feedback_items or len(feedback_items) != len(set(feedback_ids)):
-            raise RepositoryError('Selected feedback items are missing')
-
+            raise RepositoryError('Selected feedback items are missing', error_code='DRAFT_BATCH_EMPTY')
+    
         unique_related_ids = sorted({item.related_id for item in feedback_items})
         if len(unique_related_ids) > 1 and not confirm_mixed_related_ids:
-            raise RepositoryError('Mixed related_id selection requires explicit confirmation')
+            raise RepositoryError('Mixed related_id selection requires explicit confirmation', error_code='MIXED_RELATED_ID_CONFIRM_REQUIRED')
 
         primary_related_id = unique_related_ids[0] if len(unique_related_ids) == 1 else None
         batch = self.batch_repository.create_batch(
@@ -461,7 +466,7 @@ class DraftIntegrationService:
     def integrate_batch(self, batch_id: str) -> DraftRecord:
         batch = self.batch_repository.get_batch(batch_id)
         if not batch:
-            raise RepositoryError('Draft batch not found')
+            raise RepositoryError('Draft batch not found', error_code='DRAFT_BATCH_EMPTY')
 
         feedback_items = self.batch_repository.list_batch_feedback_items(batch_id)
         if not feedback_items:
@@ -470,7 +475,7 @@ class DraftIntegrationService:
                 status=DraftBatchStatus.FAILED,
                 integration_error='Draft batch has no feedback items',
             )
-            raise RepositoryError('Draft batch has no feedback items')
+            raise RepositoryError('Draft batch has no feedback items', error_code='DRAFT_BATCH_EMPTY')
 
         self.batch_repository.update_batch_status(batch_id, status=DraftBatchStatus.INTEGRATING)
         try:
@@ -481,7 +486,7 @@ class DraftIntegrationService:
                 status=DraftBatchStatus.FAILED,
                 integration_error=str(exc),
             )
-            raise RepositoryError(str(exc)) from exc
+            raise RepositoryError(str(exc), error_code='AI_INTEGRATION_FAILED') from exc
 
         self.batch_repository.update_batch_status(batch_id, status=DraftBatchStatus.DRAFT_READY)
         return draft
@@ -812,14 +817,6 @@ class DraftRepository:
             ).fetchone()
         return DraftRecord(**dict(row)) if row else None
 
-    def get_draft_by_batch_id(self, batch_id: str) -> DraftRecord | None:
-        with connection_context() as connection:
-            row = connection.execute(
-                'SELECT id, batch_id, title, body_markdown, related_id_summary, status, ai_model, prompt_snapshot, updated_at FROM drafts WHERE batch_id = ? ORDER BY updated_at DESC LIMIT 1',
-                (batch_id,),
-            ).fetchone()
-        return DraftRecord(**dict(row)) if row else None
-
     def update_draft(self, draft_id: str, payload: DraftUpdatePayload) -> DraftRecord | None:
         updated_at = utc_now_iso()
         with connection_context() as connection:
@@ -1097,11 +1094,11 @@ class DraftSubmissionService:
     def submit_draft(self, draft_id: str) -> SubmissionRecord:
         draft = self.draft_repository.get_draft(draft_id)
         if not draft:
-            raise RepositoryError('Draft not found')
+            raise RepositoryError('Draft not found', error_code='DRAFT_BATCH_EMPTY')
 
         batch = self.batch_repository.get_batch(draft.batch_id)
         if not batch:
-            raise RepositoryError('Draft batch not found')
+            raise RepositoryError('Draft batch not found', error_code='DRAFT_BATCH_EMPTY')
 
         self._validate_draft_content(draft)
         self._enforce_rate_limits(draft.related_id_summary)
@@ -1123,7 +1120,7 @@ class DraftSubmissionService:
                 response_status=500,
                 error_summary=str(exc),
             )
-            raise RepositoryError(str(exc)) from exc
+            raise RepositoryError(str(exc), error_code='GITHUB_SUBMIT_FAILED') from exc
 
         feedback_items = self.batch_repository.list_batch_feedback_items(batch.id)
         self.feedback_repository.mark_feedback_submitted([item.id for item in feedback_items])
@@ -1140,44 +1137,37 @@ class DraftSubmissionService:
 
     def _enforce_rate_limits(self, related_id_summary: str) -> None:
         now = datetime.now(timezone.utc)
-        global_since = (now - timedelta(hours=1)).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+        global_since = datetime_to_iso(now - timedelta(hours=1))
         total_recent = self.submission_repository.count_recent_submissions(since_iso=global_since)
         if total_recent >= self.settings.rate_limit_per_hour:
-            raise RepositoryError('Submission rate limit reached')
+            raise RepositoryError('Submission rate limit reached', error_code='RELATED_ID_RATE_LIMITED')
 
         related_ids = [item.strip() for item in related_id_summary.split(',') if item.strip()]
-        related_since = (
-            (now - timedelta(hours=self.settings.related_id_rate_limit_window))
-            .replace(microsecond=0)
-            .isoformat()
-            .replace('+00:00', 'Z')
-        )
+        related_since = datetime_to_iso(now - timedelta(hours=self.settings.related_id_rate_limit_window))
         for related_id in related_ids:
             per_related_count = self.submission_repository.count_recent_submissions(
                 related_id=related_id,
                 since_iso=related_since,
             )
             if per_related_count > 0:
-                raise RepositoryError(f'related_id rate limit reached for {related_id}')
+                raise RepositoryError(f'related_id rate limit reached for {related_id}', error_code='RELATED_ID_RATE_LIMITED')
 
     def _validate_draft_content(self, draft: DraftRecord) -> None:
         if len(draft.title) > self.MAX_GITHUB_TITLE_LENGTH:
-            raise RepositoryError('Draft title exceeds safe submission limit')
+            raise RepositoryError('Draft title exceeds safe submission limit', error_code='DRAFT_CONTENT_REJECTED')
         if len(draft.body_markdown) > self.MAX_GITHUB_BODY_LENGTH:
-            raise RepositoryError('Draft body exceeds safe submission limit')
+            raise RepositoryError('Draft body exceeds safe submission limit', error_code='DRAFT_CONTENT_REJECTED')
 
         combined_content = f'{draft.title}\n{draft.body_markdown}'
         for pattern in self.SENSITIVE_CONTENT_PATTERNS:
             if pattern.search(combined_content):
-                raise RepositoryError('Draft content contains sensitive credential-like content')
+                raise RepositoryError('Draft content contains sensitive credential-like content', error_code='DRAFT_CONTENT_REJECTED')
 
 
 class AdminSessionRepository:
     def create_session(
         self, *, session_token_hash: str, username: str, client_ip: str | None, user_agent_summary: str | None
     ) -> AdminSessionRecord:
-        from .config import get_settings
-
         settings = get_settings()
         now = datetime.now(timezone.utc)
         idle_expires = now + timedelta(minutes=settings.admin_session_idle_minutes)
@@ -1198,8 +1188,8 @@ class AdminSessionRepository:
                     user_agent_summary,
                     utc_now_iso(),
                     utc_now_iso(),
-                    idle_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-                    absolute_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+                    datetime_to_iso(idle_expires),
+                    datetime_to_iso(absolute_expires),
                 ),
             )
         return AdminSessionRecord(
@@ -1210,8 +1200,8 @@ class AdminSessionRepository:
             user_agent_summary=user_agent_summary,
             created_at=utc_now_iso(),
             last_seen_at=utc_now_iso(),
-            idle_expires_at=idle_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-            absolute_expires_at=absolute_expires.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+            idle_expires_at=datetime_to_iso(idle_expires),
+            absolute_expires_at=datetime_to_iso(absolute_expires),
             revoked_at=None,
         )
 
@@ -1265,15 +1255,10 @@ class AdminSessionRepository:
         )
 
     def touch_session(self, session_token_hash: str) -> bool:
-        from .config import get_settings
-
         settings = get_settings()
         now_iso = utc_now_iso()
-        idle_expires = (
-            (datetime.now(timezone.utc) + timedelta(minutes=settings.admin_session_idle_minutes))
-            .replace(microsecond=0)
-            .isoformat()
-            .replace('+00:00', 'Z')
+        idle_expires = datetime_to_iso(
+            datetime.now(timezone.utc) + timedelta(minutes=settings.admin_session_idle_minutes)
         )
         with connection_context() as connection:
             cursor = connection.execute(

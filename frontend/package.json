@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "e2e:admin": "NODE_PATH=$(npm root -g) node ./scripts/adminWorkbenchE2E.mjs",
+    "e2e:pipeline": "NODE_PATH=$(npm root -g) node ./scripts/pipelineE2E.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

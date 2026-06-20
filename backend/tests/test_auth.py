@@ -4,8 +4,6 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-from fastapi import HTTPException
-
 
 class NormalizeClientIpTestCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -276,44 +274,6 @@ class CheckLoginCooldownDbTestCase(unittest.TestCase):
         self.assertIsNone(message)
 
 
-class RequireAdminSessionTestCase(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        os.environ['APP_ENV'] = 'test'
-        os.environ['ADMIN_ROUTE_SLUG'] = 'adminconsole'
-        os.environ['DATABASE_URL'] = f'sqlite:///{self.temp_dir.name}/test.db'
-        from app.database import initialize_database
-
-        initialize_database()
-
-    def tearDown(self) -> None:
-        os.environ.pop('ADMIN_ROUTE_SLUG', None)
-        os.environ.pop('DATABASE_URL', None)
-        self.temp_dir.cleanup()
-
-    def test_missing_cookie_raises_401(self) -> None:
-        from app.auth import require_admin_session
-
-        request = SimpleNamespace(
-            headers={},
-            client=SimpleNamespace(host='192.168.1.1'),
-            url=SimpleNamespace(path='/api/admin/workbench/feedback'),
-        )
-        with self.assertRaises(HTTPException) as ctx:
-            require_admin_session(request, ia_admin_session=None)
-        self.assertEqual(ctx.exception.status_code, 401)
-
-    def test_invalid_session_token_raises_401(self) -> None:
-        from app.auth import require_admin_session
-
-        request = SimpleNamespace(
-            headers={},
-            client=SimpleNamespace(host='192.168.1.1'),
-            url=SimpleNamespace(path='/api/admin/workbench/feedback'),
-        )
-        with self.assertRaises(HTTPException) as ctx:
-            require_admin_session(request, ia_admin_session='invalid-token')
-        self.assertEqual(ctx.exception.status_code, 401)
 
 
 if __name__ == '__main__':

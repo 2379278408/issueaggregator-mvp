@@ -4,34 +4,11 @@ import unittest
 from app.config import (
     _default_database_url,
     _production_required,
-    _require_env,
     _split_csv_env,
     _validate_admin_route_slug,
     _validate_admin_security_settings,
     get_settings,
 )
-
-
-class RequireEnvTestCase(unittest.TestCase):
-    def test_returns_value_when_present(self) -> None:
-        os.environ['TEST_VAR'] = 'hello'
-        self.assertEqual(_require_env('TEST_VAR'), 'hello')
-
-    def test_returns_value_when_present_with_whitespace(self) -> None:
-        os.environ['TEST_VAR'] = '  trimmed  '
-        self.assertEqual(_require_env('TEST_VAR'), 'trimmed')
-
-    def test_raises_system_exit_when_missing(self) -> None:
-        with self.assertRaises(SystemExit):
-            _require_env('NONEXISTENT_VAR')
-
-    def test_raises_system_exit_when_empty(self) -> None:
-        os.environ['TEST_VAR'] = ''
-        with self.assertRaises(SystemExit):
-            _require_env('TEST_VAR')
-
-    def tearDown(self) -> None:
-        os.environ.pop('TEST_VAR', None)
 
 
 class ProductionRequiredTestCase(unittest.TestCase):
@@ -168,26 +145,22 @@ class DefaultDatabaseUrlTestCase(unittest.TestCase):
 
 class ValidateAdminSecuritySettingsTestCase(unittest.TestCase):
     def test_production_all_present_passes(self) -> None:
-        _validate_admin_security_settings('production', 'admin', 'hash', 'secret')
+        _validate_admin_security_settings('production', 'admin', 'hash')
 
     def test_production_missing_username_raises(self) -> None:
         with self.assertRaises(SystemExit):
-            _validate_admin_security_settings('production', None, 'hash', 'secret')
+            _validate_admin_security_settings('production', None, 'hash')
 
     def test_production_missing_password_hash_raises(self) -> None:
         with self.assertRaises(SystemExit):
-            _validate_admin_security_settings('production', 'admin', None, 'secret')
-
-    def test_production_missing_session_secret_raises(self) -> None:
-        with self.assertRaises(SystemExit):
-            _validate_admin_security_settings('production', 'admin', 'hash', None)
+            _validate_admin_security_settings('production', 'admin', None)
 
     def test_development_missing_fields_passes(self) -> None:
-        _validate_admin_security_settings('development', None, None, None)
+        _validate_admin_security_settings('development', None, None)
 
     def test_prod_alias_also_enforces(self) -> None:
         with self.assertRaises(SystemExit):
-            _validate_admin_security_settings('prod', None, 'hash', 'secret')
+            _validate_admin_security_settings('prod', None, 'hash')
 
 
 class GetSettingsDefaultsTestCase(unittest.TestCase):
@@ -308,7 +281,6 @@ class GetSettingsWithEnvTestCase(unittest.TestCase):
         settings = get_settings()
         self.assertIsNone(settings.admin_username)
         self.assertIsNone(settings.admin_password_hash)
-        self.assertIsNone(settings.admin_session_secret)
 
 
 if __name__ == '__main__':

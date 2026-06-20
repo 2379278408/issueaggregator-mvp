@@ -24,6 +24,7 @@
             <strong>用户提交页</strong>
           </RouterLink>
         </nav>
+        <ThemeToggle />
       </div>
     </header>
     <main class="page-shell__main">
@@ -36,6 +37,7 @@
 <script setup lang="ts">
 import { ref, provide, type ComponentPublicInstance } from 'vue'
 import ToastNotification from '../common/ToastNotification.vue'
+import ThemeToggle from './ThemeToggle.vue'
 import { TOAST_KEY } from '../../composables/useToast'
 
 defineProps<{

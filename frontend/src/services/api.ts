@@ -23,16 +23,12 @@ export type FeedbackItem = {
   expected_behavior?: string | null
   actual_behavior?: string | null
   page_url?: string | null
-  page_title?: string | null
-  environment_context?: string | null
   status: string
   created_at: string
   submitted_at?: string | null
   batch_id?: string | null
-  batch_status?: string | null
   batch_integration_error?: string | null
   draft_id?: string | null
-  draft_status?: string | null
 }
 
 export type AuditEventRecord = {
@@ -59,8 +55,6 @@ export type FeedbackCreatePayload = {
   expected_behavior?: string
   actual_behavior?: string
   page_url?: string
-  page_title?: string
-  environment_context?: string
 }
 
 export type DraftBatchCreatePayload = {
@@ -89,8 +83,6 @@ export type DraftRecord = {
   body_markdown: string
   related_id_summary: string
   status: string
-  ai_model?: string | null
-  prompt_snapshot?: string | null
   updated_at: string
 }
 

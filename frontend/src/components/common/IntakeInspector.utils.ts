@@ -3,7 +3,6 @@ const typeLabelMap: Record<string, string> = {
   feature: '新功能',
   enhancement: '优化',
   question: '问题',
-  mixed: '混合',
 }
 
 export function getTypeLabel(type: string): string {

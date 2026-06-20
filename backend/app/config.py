@@ -1,21 +1,11 @@
 from __future__ import annotations
 
-import logging
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 _ADMIN_ROUTE_SLUG_PATTERN = re.compile(r'^[a-z0-9]{8,64}$')
-
-
-def _require_env(name: str) -> str:
-    value = os.getenv(name, '').strip()
-    if not value:
-        raise SystemExit(f'{name} is required but not set')
-    return value
 
 
 def _split_csv_env(name: str) -> tuple[str, ...]:
@@ -64,7 +54,6 @@ class Settings:
     admin_route_slug: str
     admin_username: str | None
     admin_password_hash: str | None
-    admin_session_secret: str | None
     admin_session_cookie_name: str
     admin_session_idle_minutes: int
     admin_session_max_hours: int
@@ -100,12 +89,11 @@ def _production_required(name: str, raw_value: str | None) -> str:
 
 
 def _validate_admin_security_settings(
-    app_env: str, admin_username: str | None, admin_password_hash: str | None, admin_session_secret: str | None
+    app_env: str, admin_username: str | None, admin_password_hash: str | None
 ) -> None:
     if app_env in {'production', 'prod'}:
         _production_required('ADMIN_USERNAME', admin_username)
         _production_required('ADMIN_PASSWORD_HASH', admin_password_hash)
-        _production_required('ADMIN_SESSION_SECRET', admin_session_secret)
 
 
 def get_settings() -> Settings:
@@ -115,8 +103,7 @@ def get_settings() -> Settings:
     admin_route_slug = _validate_admin_route_slug(os.getenv('ADMIN_ROUTE_SLUG', 'adminconsole'))
     admin_username = os.getenv('ADMIN_USERNAME', '').strip() or None
     admin_password_hash = os.getenv('ADMIN_PASSWORD_HASH', '').strip() or None
-    admin_session_secret = os.getenv('ADMIN_SESSION_SECRET', '').strip() or None
-    _validate_admin_security_settings(app_env, admin_username, admin_password_hash, admin_session_secret)
+    _validate_admin_security_settings(app_env, admin_username, admin_password_hash)
     return Settings(
         app_name=os.getenv('APP_NAME', 'Issue Aggregator API'),
         app_env=app_env,
@@ -127,7 +114,6 @@ def get_settings() -> Settings:
         admin_route_slug=admin_route_slug,
         admin_username=admin_username,
         admin_password_hash=admin_password_hash,
-        admin_session_secret=admin_session_secret,
         admin_session_cookie_name=os.getenv('ADMIN_SESSION_COOKIE_NAME', 'ia_admin_session').strip(),
         admin_session_idle_minutes=int(os.getenv('ADMIN_SESSION_IDLE_MINUTES', '120')),
         admin_session_max_hours=int(os.getenv('ADMIN_SESSION_MAX_HOURS', '24')),

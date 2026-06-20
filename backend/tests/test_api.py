@@ -2,6 +2,7 @@ import hashlib
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -12,18 +13,34 @@ from pydantic import ValidationError
 os.environ['APP_ENV'] = 'test'
 
 
+@contextmanager
+def override_env(key: str, value: str):
+    old = os.environ.get(key)
+    if value:
+        os.environ[key] = value
+    else:
+        os.environ.pop(key, None)
+    try:
+        yield
+    finally:
+        if old is not None:
+            os.environ[key] = old
+        else:
+            os.environ.pop(key, None)
+
+
 class ApiTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         os.environ['APP_ENV'] = 'test'
         os.environ['DATABASE_URL'] = f'sqlite:///{self.temp_dir.name}/test.db'
 
+        from app.auth import _resolve_client_ip
         from app.database import initialize_database
         from app.models import DraftBatchCreatePayload, DraftUpdatePayload, FeedbackCreatePayload
         from app.repositories import DraftIntegrationService, DraftSubmissionService, SubmissionRepository
         from app.routers import feedback as feedback_router_module
         from app.routers.feedback import (
-            _client_ip,
             create_draft_batch,
             create_feedback,
             get_draft,
@@ -33,6 +50,7 @@ class ApiTestCase(unittest.TestCase):
             list_submitted_issues,
             require_admin_token,
             search_submitted_issues,
+            submit_draft,
             update_draft,
         )
 
@@ -42,7 +60,7 @@ class ApiTestCase(unittest.TestCase):
         self.DraftSubmissionService = DraftSubmissionService
         self.DraftUpdatePayload = DraftUpdatePayload
         self.FeedbackCreatePayload = FeedbackCreatePayload
-        self.client_ip = _client_ip
+        self.client_ip = _resolve_client_ip
         self.create_draft_batch = create_draft_batch
         self.create_feedback = create_feedback
         self.get_draft = get_draft
@@ -377,56 +395,39 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(duplicate['error_code'], 'FEEDBACK_DUPLICATE_CONTENT')
 
     def test_client_ip_ignores_forwarded_for_by_default(self) -> None:
-        original_settings = self.feedback_router_module.settings
-        self.feedback_router_module.settings = replace(original_settings, trust_proxy_headers=False)
-        request = SimpleNamespace(
-            headers={'x-forwarded-for': '9.9.9.9, 149.112.112.112'},
-            client=SimpleNamespace(host='8.8.8.8'),
-        )
-        try:
+        with override_env('TRUST_PROXY_HEADERS', ''):
+            request = SimpleNamespace(
+                headers={'x-forwarded-for': '9.9.9.9, 149.112.112.112'},
+                client=SimpleNamespace(host='8.8.8.8'),
+            )
             self.assertEqual(self.client_ip(request), '8.8.8.8')
-        finally:
-            self.feedback_router_module.settings = original_settings
 
     def test_client_ip_uses_forwarded_for_when_proxy_headers_are_trusted(self) -> None:
-        original_settings = self.feedback_router_module.settings
-        self.feedback_router_module.settings = replace(original_settings, trust_proxy_headers=True)
-        request = SimpleNamespace(
-            headers={'x-forwarded-for': '9.9.9.9, 149.112.112.112'},
-            client=SimpleNamespace(host='8.8.8.8'),
-        )
-        try:
+        with override_env('TRUST_PROXY_HEADERS', 'true'):
+            request = SimpleNamespace(
+                headers={'x-forwarded-for': '9.9.9.9, 149.112.112.112'},
+                client=SimpleNamespace(host='8.8.8.8'),
+            )
             self.assertEqual(self.client_ip(request), '9.9.9.9')
-        finally:
-            self.feedback_router_module.settings = original_settings
 
     def test_client_ip_falls_back_when_forwarded_for_is_invalid(self) -> None:
-        original_settings = self.feedback_router_module.settings
-        self.feedback_router_module.settings = replace(original_settings, trust_proxy_headers=True)
-        request = SimpleNamespace(
-            headers={'x-forwarded-for': 'not-an-ip'},
-            client=SimpleNamespace(host='8.8.8.8'),
-        )
-        try:
+        with override_env('TRUST_PROXY_HEADERS', 'true'):
+            request = SimpleNamespace(
+                headers={'x-forwarded-for': 'not-an-ip'},
+                client=SimpleNamespace(host='8.8.8.8'),
+            )
             self.assertEqual(self.client_ip(request), '8.8.8.8')
-        finally:
-            self.feedback_router_module.settings = original_settings
 
     def test_client_ip_skips_private_proxy_address_when_headers_are_untrusted(self) -> None:
-        original_settings = self.feedback_router_module.settings
-        self.feedback_router_module.settings = replace(original_settings, trust_proxy_headers=False)
-        request = SimpleNamespace(
-            headers={'x-forwarded-for': '9.9.9.9, 149.112.112.112'},
-            client=SimpleNamespace(host='10.0.0.12'),
-        )
-        try:
+        with override_env('TRUST_PROXY_HEADERS', ''):
+            request = SimpleNamespace(
+                headers={'x-forwarded-for': '9.9.9.9, 149.112.112.112'},
+                client=SimpleNamespace(host='10.0.0.12'),
+            )
             self.assertEqual(self.client_ip(request), '9.9.9.9')
-        finally:
-            self.feedback_router_module.settings = original_settings
 
     def test_client_ip_returns_none_when_request_has_no_usable_ip(self) -> None:
         request = SimpleNamespace(headers={}, client=None)
-
         self.assertIsNone(self.client_ip(request))
 
     def test_create_feedback_skips_daily_limit_when_client_ip_is_unavailable(self) -> None:
@@ -785,7 +786,7 @@ class ApiTestCase(unittest.TestCase):
             def submit_draft(self, _: str):
                 from app.repositories import RepositoryError
 
-                raise RepositoryError('GITHUB_TOKEN is required')
+                raise RepositoryError('GITHUB_TOKEN is required', error_code='TOKEN_MISSING')
 
         original_service = self.feedback_router_module.draft_submission_service
         self.feedback_router_module.draft_submission_service = MissingTokenSubmissionService()
@@ -805,7 +806,7 @@ class ApiTestCase(unittest.TestCase):
             def submit_draft(self, _: str):
                 from app.repositories import RepositoryError
 
-                raise RepositoryError('Draft content contains sensitive credential-like content')
+                raise RepositoryError('Draft content contains sensitive credential-like content', error_code='DRAFT_CONTENT_REJECTED')
 
         original_service = self.feedback_router_module.draft_submission_service
         self.feedback_router_module.draft_submission_service = SensitiveDraftSubmissionService()

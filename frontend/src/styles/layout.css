@@ -17,7 +17,7 @@
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--color-surface-raised);
   box-shadow: 0 10px 24px rgba(17, 24, 20, 0.05);
   backdrop-filter: blur(16px);
 }
@@ -35,9 +35,9 @@
   align-items: center;
   gap: 10px;
   padding: 4px 10px 4px 6px;
-  border: 1px solid rgba(31, 35, 40, 0.08);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--color-surface-strong);
   color: var(--color-text);
   box-shadow: 0 8px 18px rgba(17, 24, 20, 0.05);
   font-weight: 700;
@@ -92,15 +92,15 @@
   gap: 8px;
   min-height: 38px;
   padding: 0 14px;
-  border: 1px solid rgba(31, 35, 40, 0.1);
+  border: 1px solid var(--color-border-medium);
   border-radius: 999px;
-  background: #111814;
-  color: #ffffff;
+  background: var(--gradient-button);
+  color: var(--color-text-inverse);
   box-shadow: 0 10px 20px rgba(17, 24, 20, 0.12);
 }
 
 .top-nav__eyebrow {
-  color: #7cf29c;
+  color: var(--color-accent-light);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -110,6 +110,42 @@
 .shell-actions {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-soft);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.theme-toggle:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid rgba(124, 242, 156, 0.38);
+  outline-offset: 2px;
+}
+
+.theme-toggle__icon {
+  pointer-events: none;
+  transition: transform 0.3s ease;
+}
+
+.theme-toggle:hover .theme-toggle__icon {
+  transform: scale(1.15);
 }
 
 .page-shell__main {
@@ -130,7 +166,7 @@
   grid-template-columns: 1fr;
 }
 
-.admin-layout {
+.triage-layout.admin-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: var(--space-6);

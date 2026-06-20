@@ -21,8 +21,8 @@
             <strong>{{ activeAdminSectionLabel }}</strong>
           </div>
           <div class="triage-studio__summary-pill triage-studio__summary-pill--accent">
-            <span>当前队列</span>
-            <strong>{{ queueHeading }}</strong>
+            <span>下一步</span>
+            <strong>{{ nextActionTitle }}</strong>
           </div>
           <button class="button button--subtle" type="button" @click="handleAdminLogout">登出</button>
         </div>
@@ -44,9 +44,9 @@
               :description="queueDescription"
               :all-selected="allPendingSelected"
               :active-section="activeAdminSection"
+              :active-item-id="activeReferenceId"
               :review-item-count="reviewItems.length"
               :current-draft-id="currentDraftId"
-              :audit-event-count="auditEvents.length"
               @switch-queue="switchQueue"
               @toggle-selection="toggleSelection"
               @item-click="handleQueueItemClick"
@@ -55,7 +55,23 @@
             />
 
             <div class="triage-workbench">
+              <section class="workbench-switcher" aria-label="主工作台切换">
+                <button
+                  v-for="item in workbenchSections"
+                  :key="item.id"
+                  class="workbench-switcher__tab"
+                  :class="{ 'is-active': activeWorkbenchSection === item.id }"
+                  type="button"
+                  @click="focusAdminSection(item.id)"
+                >
+                  <span>{{ item.kicker }}</span>
+                  <strong>{{ item.label }}</strong>
+                  <small>{{ item.hint }}</small>
+                </button>
+              </section>
+
               <ReviewPanel
+                v-show="activeWorkbenchSection === 'review'"
                 :items="reviewItems"
                 :headline="reviewHeadline"
                 :description="reviewDescription"
@@ -74,6 +90,7 @@
               />
 
               <DraftEditor
+                v-show="activeWorkbenchSection === 'draft'"
                 :active-batch-id="activeBatchId"
                 :current-draft-id="currentDraftId"
                 :draft-form="{ title: draftForm.title, body_markdown: draftForm.body_markdown }"
@@ -82,6 +99,9 @@
                 :status-description="draftStatusDescription"
                 :related-id-summary="draftRelatedIdSummary"
                 :updated-at-label="draftUpdatedAtLabel"
+                :sync-state-label="draftSyncStateLabel"
+                :sync-state-hint="draftSyncStateHint"
+                :sync-state-tone="draftSyncStateTone"
                 :editor-headline="draftEditorHeadline"
                 :editor-hint="draftEditorHint"
                 :show-checklist="showDraftSubmissionChecklist"
@@ -103,6 +123,7 @@
               />
 
               <AuditPanel
+                v-show="activeWorkbenchSection === 'audit'"
                 :events="auditEvents"
                 :filter-options="auditFilterOptions"
                 :time-range-options="auditTimeRangeOptions"
@@ -115,30 +136,13 @@
                 @apply-filter="applyAuditFilter"
                 @apply-time-range="applyAuditTimeRange"
                 @apply-keyword="applyAuditKeyword"
-                @update:keyword-input="onAuditKeywordInput"
               />
             </div>
           </section>
         </section>
 
         <aside class="triage-context" aria-label="当前工作上下文">
-          <section class="triage-context__panel">
-            <div class="studio-section-head studio-section-head--stacked">
-              <div>
-                <span>Workflow Rail</span>
-                <h3>推进状态</h3>
-              </div>
-              <p>始终查看当前工作流停在哪一步，以及下一步动作是什么。</p>
-            </div>
-            <div class="workflow-rail">
-              <article v-for="step in workflowSteps" :key="step.index" class="workflow-step" :class="step.state">
-                <span>{{ step.index }}</span>
-                <strong>{{ step.label }}</strong>
-              </article>
-            </div>
-          </section>
-
-          <section class="triage-context__panel triage-context__panel--accent">
+          <section class="triage-context__panel triage-context__panel--accent triage-context__panel--dense">
             <div class="studio-section-head studio-section-head--stacked">
               <div>
                 <span>Live Context</span>
@@ -146,6 +150,19 @@
               </div>
               <p>{{ contextPanelDescription }}</p>
             </div>
+            <div class="workflow-rail">
+              <article v-for="step in workflowSteps" :key="step.index" class="workflow-step" :class="step.state">
+                <span>{{ step.index }}</span>
+                <strong>{{ step.label }}</strong>
+              </article>
+            </div>
+
+            <section class="triage-context__priority" aria-label="当前下一步动作">
+              <span>当前下一步</span>
+              <strong>{{ nextActionTitle }}</strong>
+              <p>{{ nextActionDescription }}</p>
+            </section>
+
             <div class="triage-context__facts">
               <article>
                 <span>当前队列</span>
@@ -183,9 +200,9 @@
               </div>
               <div>
                 <dt>最近更新</dt>
-                <dd>{{ draftUpdatedAtLabel }}</dd>
-              </div>
-            </dl>
+                  <dd>{{ draftUpdatedAtLabel }}</dd>
+                </div>
+              </dl>
           </section>
         </aside>
       </section>
@@ -194,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from '../components/layout/AppShell.vue'
@@ -270,6 +287,18 @@ const router = useRouter()
 const draftForm = reactive<DraftUpdatePayload>({
   title: '[草稿] 请选择反馈后生成标题',
   body_markdown: '摘要\n\n关联标识\n\n用户信号数量',
+})
+const draftSyncState = ref<
+  'idle' | 'dirty' | 'generating' | 'saving' | 'saved' | 'save_error' | 'submitting' | 'submitted' | 'submit_error'
+>('idle')
+const draftLocalEdits = reactive<Record<string, DraftUpdatePayload>>({})
+const draftLocalDirtyMap = reactive<Record<string, boolean>>({})
+const queueContextMemory = reactive<
+  Record<QueueStatus, { selectedIds: string[]; referenceId: string; batchId: string; draftId: string }>
+>({
+  pending: { selectedIds: [], referenceId: '', batchId: '', draftId: '' },
+  grouped: { selectedIds: [], referenceId: '', batchId: '', draftId: '' },
+  submitted: { selectedIds: [], referenceId: '', batchId: '', draftId: '' },
 })
 
 const auditFilterOptions: Array<{ value: AuditEventFilter; label: string }> = [
@@ -443,6 +472,60 @@ const draftCanSubmit = computed(
   () => Boolean(currentDraftId.value) && Boolean(draftForm.title.trim()) && Boolean(draftForm.body_markdown.trim()),
 )
 
+const draftSyncStateLabel = computed(() => {
+  if (draftSyncState.value === 'generating') return '正在生成草稿'
+  if (draftSyncState.value === 'saving') return '正在保存草稿'
+  if (draftSyncState.value === 'saved') return '草稿已保存'
+  if (draftSyncState.value === 'save_error') return '保存失败'
+  if (draftSyncState.value === 'submitting') return '正在提交 GitHub'
+  if (draftSyncState.value === 'submitted') return 'GitHub 提交完成'
+  if (draftSyncState.value === 'submit_error') return '提交失败'
+  if (draftSyncState.value === 'dirty') return '存在未保存改动'
+  if (!currentDraftId.value) return activeBatchId.value ? '等待生成草稿' : '等待创建批次'
+  return '草稿上下文已就绪'
+})
+
+const draftSyncStateHint = computed(() => {
+  if (draftSyncState.value === 'generating') return '系统正在把当前批次整合为结构化草稿，完成后会自动切入编辑区。'
+  if (draftSyncState.value === 'saving') return '当前修改正在写回服务端，完成后会刷新最近更新时间。'
+  if (draftSyncState.value === 'saved') return '草稿已经落库，可以继续编辑，也可以直接进入提交。'
+  if (draftSyncState.value === 'save_error') return '保留当前输入内容，修复网络后可再次保存。'
+  if (draftSyncState.value === 'submitting') return '当前草稿正在发送到 GitHub，队列与结果会在完成后同步。'
+  if (draftSyncState.value === 'submitted') return '提交结果已落库，当前批次可以回看，也可以切回队列处理下一批。'
+  if (draftSyncState.value === 'submit_error') return '本地草稿内容仍然保留，确认信息后可直接重试提交。'
+  if (draftSyncState.value === 'dirty') return '你已经修改了标题或正文，保存后再提交可以保持批次上下文一致。'
+  if (!currentDraftId.value) return activeBatchId.value ? '批次已经创建，下一步生成结构化草稿。' : '先在审阅区确认主题，再把上下文推进到草稿阶段。'
+  return '当前草稿已经载入，可直接继续编辑。'
+})
+
+const draftSyncStateTone = computed<'idle' | 'active' | 'success' | 'warning'>(() => {
+  if (draftSyncState.value === 'generating' || draftSyncState.value === 'saving' || draftSyncState.value === 'submitting')
+    return 'active'
+  if (draftSyncState.value === 'saved' || draftSyncState.value === 'submitted') return 'success'
+  if (draftSyncState.value === 'dirty' || draftSyncState.value === 'save_error' || draftSyncState.value === 'submit_error')
+    return 'warning'
+  return 'idle'
+})
+
+const activeWorkbenchSection = computed<Exclude<AdminSection, 'queue'>>(() =>
+  activeAdminSection.value === 'queue' ? 'review' : activeAdminSection.value,
+)
+
+const workbenchSections = computed(() => [
+  {
+    id: 'review' as const,
+    kicker: '01',
+    label: '聚合审阅',
+    hint: reviewItems.value.length ? `${reviewItems.value.length} 条反馈待判断` : '等待从左侧队列送入',
+  },
+  {
+    id: 'draft' as const,
+    kicker: '02',
+    label: '草稿与提交',
+    hint: currentDraftId.value ? '草稿已生成，可直接编辑' : activeBatchId.value ? '批次已就绪，等待生稿' : '等待建批后进入',
+  },
+])
+
 const queueHeading = computed(() => statusLabelMap[queueStatus.value] || queueStatus.value)
 
 const queueDescription = computed(() => {
@@ -510,7 +593,55 @@ const contextPanelDescription = computed(() => {
     : '当前处于历史回看模式，重点是沿着已分组或已提交链路快速回到对应草稿。'
 })
 
-let sectionObserver: IntersectionObserver | null = null
+const nextActionTitle = computed(() => {
+  if (activeAdminSection.value === 'audit') {
+    return auditEvents.value.length ? '筛选并回看目标事件' : '刷新最近审计记录'
+  }
+  if (activeAdminSection.value === 'draft') {
+    if (submissionResult.value) return '切回队列处理下一批'
+    if (currentDraftId.value) return draftCanSubmit.value ? '确认后提交 GitHub' : '继续补齐草稿内容'
+    if (activeBatchId.value) return '生成当前批次草稿'
+    return '先创建批次再进入编辑'
+  }
+  if (activeAdminSection.value === 'review') {
+    if (activeBatchId.value && !currentDraftId.value) return '生成草稿进入编辑'
+    if (selectedItems.value.length) return batchSummary.value.isMixed ? '拆分主题后再建批' : '确认后创建批次'
+    return '先从队列选择反馈'
+  }
+  if (queueStatus.value === 'pending') return '勾选同主题反馈进入审阅'
+  if (queueStatus.value === 'grouped') return '打开批次继续编辑草稿'
+  return '回看提交记录与安全链路'
+})
+
+const nextActionDescription = computed(() => {
+  if (activeAdminSection.value === 'audit') {
+    return auditEvents.value.length
+      ? '优先按时间、动作或资源收敛范围，快速定位异常行为和关键管理员操作。'
+      : '当前列表为空，先刷新最近事件，再确认是否存在新的鉴权失败或关键操作。'
+  }
+  if (activeAdminSection.value === 'draft') {
+    if (submissionResult.value) return '当前批次已经完成提交，主流程可以回到队列，继续处理新的主题。'
+    if (currentDraftId.value) {
+      return draftCanSubmit.value
+        ? '标题和正文已具备提交条件，确认结构和语义后即可直接发往 GitHub。'
+        : '继续补齐标题、正文和章节结构，主面板会始终保留当前批次的编辑上下文。'
+    }
+    if (activeBatchId.value) return '批次已经准备完成，下一步直接生成结构化草稿，避免手工从空白开始编辑。'
+    return '先在审阅区确认当前主题，再建立批次，草稿区会自动接管后续流程。'
+  }
+  if (activeAdminSection.value === 'review') {
+    if (activeBatchId.value && !currentDraftId.value) return '当前主题已经建批，进入下一步生成草稿即可开始正文整理。'
+    if (selectedItems.value.length) {
+      return batchSummary.value.isMixed
+        ? '当前选中反馈涉及多个关联标识，先缩小范围，再建立更聚焦的批次。'
+        : '当前选中反馈已经进入判断区，确认主题一致后即可把它们推进到批次。'
+    }
+    return '左侧队列负责提供原始反馈，先选中一组需要处理的信号，审阅区才会出现有效上下文。'
+  }
+  if (queueStatus.value === 'pending') return '在收件箱中勾选一组同主题反馈，系统会把它们带入审阅区继续判断。'
+  if (queueStatus.value === 'grouped') return '这里适合回到已建批的历史记录，快速续写草稿或补充上下文。'
+  return '当前处于已提交回看模式，重点是沿着结果记录回到对应草稿和审计链路。'
+})
 
 function getMissingFieldCount(item: FeedbackItem): number {
   let count = 0
@@ -600,13 +731,20 @@ function restoreQueueStatusFromRoute(): void {
 }
 
 function switchQueue(status: QueueStatus): void {
+  rememberQueueContext(queueStatus.value)
   queueStatus.value = status
   activeAdminSection.value = 'queue'
   activeReferenceId.value = ''
   batchMessage.value = ''
   draftMessage.value = ''
   resetProcessingContext()
-  if (status !== 'pending') selectedIds.value = []
+  if (status === 'pending') {
+    selectedIds.value = queueContextMemory.pending.selectedIds.filter((id) => pendingItems.value.some((item) => item.id === id))
+    if (selectedIds.value.length) void focusAdminSection('review')
+  } else {
+    selectedIds.value = []
+    void restoreQueueContext(status)
+  }
   syncAdminContextToRoute()
 }
 
@@ -638,6 +776,7 @@ function handleQueueItemClick(item: FeedbackItem): void {
   activeReferenceId.value = item.id
   activeBatchId.value = item.batch_id || ''
   if (item.draft_id) {
+    rememberQueueContext(queueStatus.value)
     void loadDraft(item.draft_id)
     return
   }
@@ -645,6 +784,7 @@ function handleQueueItemClick(item: FeedbackItem): void {
     draftMessage.value = `上次生成失败：${item.batch_integration_error}。可重新生成草稿。`
   }
   syncAdminContextToRoute()
+  rememberQueueContext(queueStatus.value)
   void focusAdminSection('review')
 }
 
@@ -652,9 +792,11 @@ function toggleSelection(feedbackId: string): void {
   if (!selectedIds.value.length) resetProcessingContext()
   if (selectedIds.value.includes(feedbackId)) {
     selectedIds.value = selectedIds.value.filter((id) => id !== feedbackId)
+    rememberQueueContext('pending')
     return
   }
   selectedIds.value = [...selectedIds.value, feedbackId]
+  rememberQueueContext('pending')
   void focusAdminSection('review')
 }
 
@@ -663,10 +805,12 @@ function toggleCurrentPendingSelection(): void {
   if (allPendingSelected.value) {
     selectedIds.value = []
     resetProcessingContext()
+    rememberQueueContext('pending')
     return
   }
   resetProcessingContext()
   selectedIds.value = queueItems.value.map((item) => item.id)
+  rememberQueueContext('pending')
   void focusAdminSection('review')
 }
 
@@ -674,8 +818,43 @@ function resetDraftEditor(): void {
   currentDraftId.value = ''
   currentDraftRecord.value = null
   submissionResult.value = null
+  draftSyncState.value = 'idle'
   draftForm.title = draftPreviewTitle.value
   draftForm.body_markdown = '摘要\n\n关联标识\n\n用户信号数量'
+}
+
+function isDraftDirtyAgainstRecord(record: DraftRecord | null, form: DraftUpdatePayload): boolean {
+  if (!record) return false
+  return record.title !== form.title || record.body_markdown !== form.body_markdown
+}
+
+function rememberQueueContext(status: QueueStatus): void {
+  queueContextMemory[status] = {
+    selectedIds: status === 'pending' ? [...selectedIds.value] : [],
+    referenceId: activeReferenceId.value,
+    batchId: activeBatchId.value,
+    draftId: currentDraftId.value,
+  }
+}
+
+async function restoreQueueContext(status: Exclude<QueueStatus, 'pending'>): Promise<void> {
+  const memory = queueContextMemory[status]
+  const items = status === 'grouped' ? groupedItems.value : submittedItems.value
+  if (!items.length) return
+  const matchedItem =
+    items.find((item) => item.id === memory.referenceId) ||
+    items.find((item) => item.draft_id === memory.draftId) ||
+    items.find((item) => item.batch_id === memory.batchId)
+  if (!matchedItem) return
+  activeReferenceId.value = matchedItem.id
+  activeBatchId.value = matchedItem.batch_id || memory.batchId
+  if (matchedItem.draft_id) {
+    await loadDraft(matchedItem.draft_id)
+    return
+  }
+  if (matchedItem.batch_integration_error) {
+    draftMessage.value = `上次生成失败：${matchedItem.batch_integration_error}。可重新生成草稿。`
+  }
 }
 
 const draftPreviewTitle = computed(() => {
@@ -718,7 +897,6 @@ function clearAdminWorkspaceState(): void {
 
 function relockAdmin(message: string): void {
   clearAdminToken()
-  sectionObserver?.disconnect()
   isAdminUnlocked.value = false
   adminDataMessage.value = ''
   adminAuthMessage.value = message
@@ -798,13 +976,15 @@ async function applyAuditKeyword(keyword?: string): Promise<void> {
   await loadAuditEvents()
 }
 
-function onAuditKeywordInput(value: string): void {
-  auditKeywordInput.value = value
-}
-
 function onDraftFormUpdate(form: DraftForm): void {
   if (form.title) draftForm.title = form.title
   if (form.body_markdown) draftForm.body_markdown = form.body_markdown
+  if (!currentDraftId.value) return
+  draftLocalEdits[currentDraftId.value] = { title: draftForm.title, body_markdown: draftForm.body_markdown }
+  const dirty = isDraftDirtyAgainstRecord(currentDraftRecord.value, draftLocalEdits[currentDraftId.value])
+  draftLocalDirtyMap[currentDraftId.value] = dirty
+  draftSyncState.value = dirty ? 'dirty' : 'saved'
+  rememberQueueContext(queueStatus.value)
 }
 
 async function loadAdminData(options: { relockOnAuthFailure?: boolean } = {}): Promise<boolean> {
@@ -824,7 +1004,6 @@ async function loadAdminData(options: { relockOnAuthFailure?: boolean } = {}): P
     if (activeReferenceId.value && !queueItems.value.some((item) => item.id === activeReferenceId.value)) {
       activeReferenceId.value = ''
     }
-    syncAdminContextToRoute()
     return true
   } catch (error) {
     if (options.relockOnAuthFailure && isAuthFailureStatus(getErrorHttpStatus(error))) {
@@ -862,8 +1041,6 @@ async function unlockAdmin(username: string, password: string): Promise<void> {
     const loaded = await loadAdminData({ relockOnAuthFailure: true })
     if (!loaded) return
     await loadAuditEvents()
-    await nextTick()
-    setupSectionObserver()
   } finally {
     isLoggingIn.value = false
   }
@@ -903,9 +1080,11 @@ async function createBatch(): Promise<void> {
       queueStatus.value = 'grouped'
       selectedIds.value = []
       resetDraftEditor()
+      draftSyncState.value = 'idle'
       await loadAdminData()
       const firstGroupedItem = groupedItems.value.find((item) => item.batch_id === response.data.id)
       activeReferenceId.value = firstGroupedItem?.id || ''
+      rememberQueueContext('grouped')
       syncAdminContextToRoute()
       await focusAdminSection('draft')
     } else {
@@ -924,17 +1103,25 @@ async function loadDraft(draftId: string): Promise<void> {
     if (response.success) {
       currentDraftId.value = response.data.id
       currentDraftRecord.value = response.data
-      draftForm.title = response.data.title
-      draftForm.body_markdown = response.data.body_markdown
+      const hasLocalDirtyDraft = Boolean(draftLocalDirtyMap[response.data.id] && draftLocalEdits[response.data.id])
+      const draftSource = hasLocalDirtyDraft ? draftLocalEdits[response.data.id] : response.data
+      draftForm.title = draftSource.title
+      draftForm.body_markdown = draftSource.body_markdown
       submissionResult.value = null
+      draftSyncState.value = hasLocalDirtyDraft ? 'dirty' : 'saved'
       syncAdminContextToRoute()
+      rememberQueueContext(queueStatus.value)
       await focusAdminSection('draft')
-      draftMessage.value = `草稿已加载，更新时间 ${response.data.updated_at}`
+      draftMessage.value = hasLocalDirtyDraft
+        ? `已恢复本地未保存改动，原始更新时间 ${response.data.updated_at}`
+        : `草稿已加载，更新时间 ${response.data.updated_at}`
     } else {
       draftMessage.value = response.message || '草稿加载失败'
+      draftSyncState.value = 'save_error'
     }
   } catch {
     draftMessage.value = '草稿加载失败，请检查网络后重试。'
+    draftSyncState.value = 'save_error'
   }
 }
 
@@ -963,6 +1150,7 @@ async function restoreAdminContextFromRoute(): Promise<void> {
         draftMessage.value = `上次生成失败：${matchedBatchItem.batch_integration_error}。可重新生成草稿。`
       }
       syncAdminContextToRoute()
+      void focusAdminSection('review')
       return
     }
   }
@@ -980,15 +1168,20 @@ async function integrateDraft(): Promise<void> {
   }
   integratingDraft.value = true
   draftMessage.value = ''
+  draftSyncState.value = 'generating'
   try {
     const response = await apiPost<DraftIntegrateResponse, Record<string, never>>(
       buildAdminApiPath(`/draft-batches/${activeBatchId.value}/integrate`),
       {},
     )
     if (response.success) await loadDraft(response.data.draft_id)
-    else draftMessage.value = response.message || '草稿生成失败'
+    else {
+      draftMessage.value = response.message || '草稿生成失败'
+      draftSyncState.value = 'save_error'
+    }
   } catch {
     draftMessage.value = '草稿生成失败，请检查网络后重试。'
+    draftSyncState.value = 'save_error'
   } finally {
     integratingDraft.value = false
   }
@@ -1000,6 +1193,7 @@ async function saveDraft(): Promise<void> {
     return
   }
   savingDraft.value = true
+  draftSyncState.value = 'saving'
   const payload: DraftUpdatePayload = { title: draftForm.title, body_markdown: draftForm.body_markdown }
   try {
     const response = await apiPut<{ id: string; status: string; updated_at: string }, DraftUpdatePayload>(
@@ -1022,12 +1216,17 @@ async function saveDraft(): Promise<void> {
         status: response.data.status,
         updated_at: response.data.updated_at,
       }
+      draftLocalEdits[currentDraftId.value] = { ...payload }
+      draftLocalDirtyMap[currentDraftId.value] = false
+      draftSyncState.value = 'saved'
     }
     draftMessage.value = response.success
-      ? `草稿保存成功，更新时间 ${response.data.updated_at}`
+      ? ''
       : response.message || '草稿保存失败'
+    if (!response.success) draftSyncState.value = 'save_error'
   } catch {
     draftMessage.value = '草稿保存失败，请检查网络后重试。'
+    draftSyncState.value = 'save_error'
   } finally {
     savingDraft.value = false
   }
@@ -1039,6 +1238,7 @@ async function submitDraftToGithub(): Promise<void> {
     return
   }
   submittingDraft.value = true
+  draftSyncState.value = 'submitting'
   try {
     const response = await apiPost<DraftSubmitResponse, Record<string, never>>(
       buildAdminApiPath(`/drafts/${currentDraftId.value}/submit`),
@@ -1046,42 +1246,27 @@ async function submitDraftToGithub(): Promise<void> {
     )
     if (response.success) {
       submissionResult.value = response.data
+      draftLocalDirtyMap[currentDraftId.value] = false
+      draftSyncState.value = 'submitted'
       draftMessage.value = `草稿已提交，GitHub Issue #${response.data.issue_number}`
       await loadAdminData()
+      queueStatus.value = 'submitted'
+      const matchedSubmittedItem = submittedItems.value.find((item) => item.draft_id === currentDraftId.value)
+      activeReferenceId.value = matchedSubmittedItem?.id || activeReferenceId.value
+      activeBatchId.value = matchedSubmittedItem?.batch_id || activeBatchId.value
+      rememberQueueContext('submitted')
+      syncAdminContextToRoute()
       await focusAdminSection('draft')
     } else {
       draftMessage.value = response.message || '提交失败'
+      draftSyncState.value = 'submit_error'
     }
   } catch {
     draftMessage.value = '提交失败，请检查网络后重试。'
+    draftSyncState.value = 'submit_error'
   } finally {
     submittingDraft.value = false
   }
-}
-
-function setupSectionObserver(): void {
-  if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') return
-  const sections = [
-    { id: 'queue-panel', section: 'queue' as const },
-    { id: 'review-panel', section: 'review' as const },
-    { id: 'draft-panel', section: 'draft' as const },
-    { id: 'audit-panel', section: 'audit' as const },
-  ]
-  sectionObserver = new IntersectionObserver(
-    (entries) => {
-      const visibleEntry = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-      if (!visibleEntry) return
-      const matchedSection = sections.find((item) => item.id === visibleEntry.target.id)
-      if (matchedSection) activeAdminSection.value = matchedSection.section
-    },
-    { threshold: [0.35, 0.55, 0.75], rootMargin: '-10% 0px -45% 0px' },
-  )
-  sections.forEach((item) => {
-    const element = document.getElementById(item.id)
-    if (element) sectionObserver?.observe(element)
-  })
 }
 
 onMounted(async () => {
@@ -1101,12 +1286,6 @@ onMounted(async () => {
     if (!loaded) return
     await restoreAdminContextFromRoute()
     await loadAuditEvents()
-    await nextTick()
-    setupSectionObserver()
   }
-})
-
-onBeforeUnmount(() => {
-  sectionObserver?.disconnect()
 })
 </script>

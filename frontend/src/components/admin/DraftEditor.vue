@@ -1,6 +1,6 @@
 <template>
   <article id="draft-panel" class="issue-editor">
-    <header class="studio-section-head">
+    <header class="studio-section-head studio-section-head--compact">
       <div>
         <span>Issue Draft</span>
         <h3>{{ statusLabel }}</h3>
@@ -8,13 +8,18 @@
       <p>{{ statusDescription }}</p>
     </header>
 
-    <div class="issue-editor__meta issue-editor__meta--badges">
+    <div class="issue-editor__meta issue-editor__meta--badges issue-editor__meta--compact">
       <span>{{ relatedIdSummary }}</span>
       <span>{{ activeBatchId || '待建批' }}</span>
       <span>{{ updatedAtLabel }}</span>
     </div>
 
-    <section class="batch-insight-grid" aria-label="批次摘要信息">
+    <section class="draft-sync-card" :class="`is-${syncStateTone}`" aria-label="草稿同步状态">
+      <strong>{{ syncStateLabel }}</strong>
+      <p>{{ syncStateHint }}</p>
+    </section>
+
+    <section class="batch-insight-grid batch-insight-grid--compact" aria-label="批次摘要信息">
       <article class="batch-insight-card">
         <span>批次条目数</span>
         <strong>{{ reviewItems.length }}</strong>
@@ -29,7 +34,7 @@
       </article>
     </section>
 
-    <div class="draft-editor-note">
+    <div class="draft-editor-note draft-editor-note--compact">
       <strong>{{ editorHeadline }}</strong>
       <p>{{ editorHint }}</p>
     </div>
@@ -42,17 +47,18 @@
     <label class="field field--full issue-body-field">
       <span>Issue 正文</span>
       <small class="field-helper">正文按摘要、背景、期望、实际和影响展开，便于直接提交到 GitHub。</small>
-      <textarea
-        :value="draftForm.body_markdown"
-        class="textarea textarea--editor"
-        rows="18"
-        :readonly="!currentDraftId"
-        @input="onBodyChange"
-      ></textarea>
+        <textarea
+          ref="bodyTextarea"
+          :value="draftForm.body_markdown"
+          class="textarea textarea--editor"
+          rows="14"
+          :readonly="!currentDraftId"
+          @input="onBodyChange"
+        ></textarea>
     </label>
 
     <div v-if="message" class="feedback-message draft-message">{{ message }}</div>
-    <section v-if="showChecklist" class="submission-readiness-card" aria-label="提交前确认信息">
+    <section v-if="showChecklist" class="submission-readiness-card submission-readiness-card--compact" aria-label="提交前确认信息">
       <strong>提交前确认</strong>
       <p>{{ checklistSummary }}</p>
       <div class="submission-readiness-card__facts">
@@ -95,11 +101,12 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch, onMounted, nextTick } from 'vue'
 import type { DraftSubmitResponse, FeedbackItem } from '../../services/api'
 
 export type DraftForm = { title: string; body_markdown: string }
 
-defineProps<{
+const props = defineProps<{
   activeBatchId: string
   currentDraftId: string
   draftForm: DraftForm
@@ -108,6 +115,9 @@ defineProps<{
   statusDescription: string
   relatedIdSummary: string
   updatedAtLabel: string
+  syncStateLabel: string
+  syncStateHint: string
+  syncStateTone: 'idle' | 'active' | 'success' | 'warning'
   editorHeadline: string
   editorHint: string
   showChecklist: boolean
@@ -131,6 +141,15 @@ const emit = defineEmits<{
   'update:draftForm': [form: DraftForm]
 }>()
 
+const bodyTextarea = ref<HTMLTextAreaElement | null>(null)
+
+function autoResizeTextarea() {
+  const el = bodyTextarea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
+
 function onTitleChange(event: Event) {
   const target = event.target as HTMLInputElement
   emit('update:draftForm', { title: target.value, body_markdown: '' })
@@ -138,6 +157,15 @@ function onTitleChange(event: Event) {
 
 function onBodyChange(event: Event) {
   const target = event.target as HTMLTextAreaElement
-  emit('update:draftForm', { title: '', body_markdown: target.value })
+  emit('update:draftForm', { title: props.draftForm.title, body_markdown: target.value })
+  nextTick(() => autoResizeTextarea())
 }
+
+watch(() => props.draftForm.body_markdown, () => {
+  nextTick(() => autoResizeTextarea())
+})
+
+onMounted(() => {
+  nextTick(() => autoResizeTextarea())
+})
 </script>

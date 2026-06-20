@@ -1125,6 +1125,206 @@ describe('AdminWorkbenchPage', () => {
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('用户信号数量')
   })
 
+  it('restores unsaved local draft edits after switching away and back', async () => {
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_2',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'two',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_1',
+              draft_id: 'draft_1',
+            },
+            {
+              id: 'fb_3',
+              type: 'bug',
+              related_id: 'toolbar-shortcuts',
+              raw_content: 'three',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_2',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [],
+          total: 0,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'draft_1',
+          batch_id: 'batch_1',
+          title: '[Bug] editor-copy-button',
+          body_markdown: 'Summary',
+          related_id_summary: 'editor-copy-button',
+          status: 'draft_ready',
+          updated_at: '2026-06-11T11:10:00Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'draft_1',
+          batch_id: 'batch_1',
+          title: '[Bug] editor-copy-button',
+          body_markdown: 'Summary',
+          related_id_summary: 'editor-copy-button',
+          status: 'draft_ready',
+          updated_at: '2026-06-11T11:10:00Z',
+        },
+      })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '草稿中')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().includes('editor-copy-button'))!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('Summary\n\nLocal unsaved change')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('toolbar-shortcuts'))!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().includes('editor-copy-button'))!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已恢复本地未保存改动')
+    expect(wrapper.text()).toContain('存在未保存改动')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('Local unsaved change')
+  })
+
+  it('switches to submitted queue after GitHub submission succeeds', async () => {
+    apiGet
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'pending',
+              created_at: 'now',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [], total: 0 } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_1',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'one',
+              status: 'grouped',
+              created_at: 'now',
+              batch_id: 'batch_1',
+              draft_id: 'draft_1',
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'draft_1',
+          batch_id: 'batch_1',
+          title: '[Bug] editor-copy-button',
+          body_markdown: 'Summary',
+          related_id_summary: 'editor-copy-button',
+          status: 'draft_ready',
+          updated_at: '2026-06-11T11:10:00Z',
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'fb_9',
+              type: 'bug',
+              related_id: 'editor-copy-button',
+              raw_content: 'submitted',
+              status: 'submitted',
+              created_at: 'now',
+              batch_id: 'batch_1',
+              draft_id: 'draft_1',
+            },
+          ],
+        },
+      })
+
+    apiPost
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'batch_1',
+          status: 'created',
+          primary_related_id: 'editor-copy-button',
+          related_id_count: 1,
+          created_at: '2026-06-11T11:00:00Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          batch_id: 'batch_1',
+          draft_id: 'draft_1',
+          status: 'draft_ready',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          draft_id: 'draft_1',
+          issue_number: 501,
+          issue_url: 'https://github.com/org/repo/issues/501',
+          related_id: 'editor-copy-button',
+          submitted_at: '2026-06-11T11:20:00Z',
+        },
+      })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await findButtonByText(wrapper, '创建批次')!.trigger('click')
+    await flushPromises()
+    await findButtonByText(wrapper, '生成草稿')!.trigger('click')
+    await flushPromises()
+    await findButtonByText(wrapper, '提交 GitHub')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('GitHub 提交完成')
+    expect(wrapper.text()).toContain('已发布')
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: { adminQueue: 'submitted', batchId: 'batch_1', draftId: 'draft_1' } })
+  })
+
   it('syncs queue context to route when switching status', async () => {
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [] } })

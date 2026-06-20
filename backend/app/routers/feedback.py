@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from ipaddress import IPv4Address, IPv6Address, ip_address
 from re import fullmatch
 from secrets import compare_digest
 from urllib.parse import urlsplit
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
@@ -28,6 +26,7 @@ from ..models import (
     DraftUpdatePayload,
     FeedbackCreatePayload,
     FeedbackStatus,
+    datetime_to_iso,
     new_session_token,
 )
 from ..repositories import (
@@ -47,7 +46,6 @@ from ..responses import error_response, success_response
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-_AUDIT_WINDOW = timedelta(minutes=10)
 public_router = APIRouter(prefix=settings.api_base_path, tags=['feedback'])
 feedback_repository = FeedbackRepository()
 feedback_rate_limit_repository = PublicFeedbackRateLimitRepository()
@@ -99,29 +97,9 @@ def _enforce_public_feedback_origin(request: Request) -> None:
         raise HTTPException(status_code=403, detail='Origin is not allowed')
 
 
-def _record_audit_event(
-    event_type: str, client_ip: str, path: str, *, action: str | None = None, resource_id: str | None = None
-) -> tuple[str, int]:
-    event_id = uuid4().hex[:12]
-    now = datetime.now(timezone.utc)
-    since_iso = (now - _AUDIT_WINDOW).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
-    audit_event_repository.create_event(
-        event_id=event_id,
-        event_type=event_type,
-        client_ip=client_ip,
-        path=path,
-        action=action,
-        resource_id=resource_id,
-    )
-    recent_count = audit_event_repository.count_recent_events(
-        event_type=event_type, client_ip=client_ip, since_iso=since_iso
-    )
-    return event_id, recent_count
-
-
 def _log_admin_action(request: Request, *, action: str, resource_id: str | None = None) -> None:
-    client_ip = _client_ip(request) or 'unknown'
-    event_id, recent_count = _record_audit_event(
+    client_ip = _resolve_client_ip(request) or 'unknown'
+    event_id, recent_count = _write_audit_event(
         'admin_action_succeeded',
         client_ip,
         request.url.path,
@@ -258,7 +236,7 @@ def admin_logout(request: Request, response: Response) -> dict[str, object]:
 def require_admin_token(
     request: Request, x_admin_token: str | None = Header(default=None, alias='X-Admin-Token')
 ) -> None:
-    client_ip = _client_ip(request) or 'unknown'
+    client_ip = _resolve_client_ip(request) or 'unknown'
     path = request.url.path
 
     cookies = getattr(request, 'cookies', {})
@@ -274,7 +252,7 @@ def require_admin_token(
         return
 
     if not settings.admin_api_token and not settings.admin_password_hash:
-        event_id, recent_count = _record_audit_event('admin_auth_failed', client_ip, path)
+        event_id, recent_count = _write_audit_event('admin_auth_failed', client_ip, path)
         logger.warning(
             'admin_auth_failed event_id=%s path=%s client_ip=%s reason=token_not_configured recent_count=%s',
             event_id,
@@ -284,7 +262,7 @@ def require_admin_token(
         )
         raise HTTPException(status_code=503, detail='Admin API token is not configured')
 
-    event_id, recent_count = _record_audit_event('admin_auth_failed', client_ip, path)
+    event_id, recent_count = _write_audit_event('admin_auth_failed', client_ip, path)
     logger.warning(
         'admin_auth_failed event_id=%s path=%s client_ip=%s reason=invalid_token recent_count=%s',
         event_id,
@@ -310,7 +288,7 @@ def _validate_pagination(page: int, page_size: int) -> None:
 def _validate_resource_id(resource_id: str, pattern: str) -> str:
     normalized = resource_id.strip()
     if not fullmatch(pattern, normalized):
-        raise HTTPException(status_code=404, detail='Not found')
+        raise HTTPException(status_code=400, detail='Invalid resource identifier')
     return normalized
 
 
@@ -361,60 +339,22 @@ def _audit_since_iso(time_range: str | None) -> str | None:
         since = now - timedelta(hours=1)
     else:
         since = now - timedelta(hours=24)
-    return since.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    return datetime_to_iso(since)
 
 
-def _normalize_client_ip(value: str | None) -> str | None:
-    parsed_ip = _parse_client_ip(value)
-    return str(parsed_ip) if parsed_ip else None
-
-
-def _parse_client_ip(value: str | None) -> IPv4Address | IPv6Address | None:
-    if not value:
-        return None
-    candidate = value.strip()
-    if not candidate:
-        return None
-    try:
-        return ip_address(candidate)
-    except ValueError:
-        return None
-
-
-def _client_ip(request: Request) -> str | None:
-    forwarded_header = request.headers.get('x-forwarded-for')
-    forwarded_ip = _normalize_client_ip(forwarded_header.split(',', 1)[0]) if forwarded_header else None
-
-    if settings.trust_proxy_headers and forwarded_ip:
-        return forwarded_ip
-
-    direct_ip = _normalize_client_ip(request.client.host if request.client else None)
-    if direct_ip and _parse_client_ip(direct_ip).is_global:
-        return direct_ip
-
-    direct_peer = _parse_client_ip(direct_ip)
-    if (
-        direct_peer
-        and forwarded_ip
-        and (direct_peer.is_private or direct_peer.is_loopback or direct_peer.is_link_local)
-    ):
-        return forwarded_ip
-
-    return None
+def _resolve_client_ip_dep(request: Request) -> str | None:
+    return _resolve_client_ip(request)
 
 
 @public_router.post('/feedback')
 def create_feedback(
     payload: FeedbackCreatePayload,
     request: Request,
-    client_ip: str | None = Depends(_client_ip),
+    client_ip: str | None = Depends(_resolve_client_ip_dep),
 ) -> dict[str, object]:
     _enforce_public_feedback_origin(request)
-    duplicate_window_start = (
-        (datetime.now(timezone.utc) - timedelta(minutes=settings.public_feedback_duplicate_window_minutes))
-        .replace(microsecond=0)
-        .isoformat()
-        .replace('+00:00', 'Z')
+    duplicate_window_start = datetime_to_iso(
+        datetime.now(timezone.utc) - timedelta(minutes=settings.public_feedback_duplicate_window_minutes)
     )
     if feedback_repository.count_recent_duplicate_feedback(payload, since_iso=duplicate_window_start) > 0:
         return error_response(
@@ -431,6 +371,9 @@ def create_feedback(
                 f'同一 IP 每天最多提交 {settings.public_feedback_daily_ip_limit} 次反馈。',
             )
     elif client_ip is None:
+        # No client IP resolved — skip rate limiting for this request.
+        # This can happen when the client connects via an unrecognized proxy
+        # and trust_proxy_headers is disabled.
         pass
     else:
         if not feedback_rate_limit_repository.consume_daily_quota(
@@ -527,12 +470,7 @@ def create_draft_batch(payload: DraftBatchCreatePayload, request: Request) -> di
     try:
         batch = draft_batch_service.create_batch(payload.feedback_item_ids, payload.confirm_mixed_related_ids)
     except RepositoryError as exc:
-        message = str(exc)
-        if 'explicit confirmation' in message:
-            return error_response('MIXED_RELATED_ID_CONFIRM_REQUIRED', message)
-        if 'belongs to an active batch' in message:
-            return error_response('FEEDBACK_ALREADY_GROUPED', message)
-        return error_response('DRAFT_BATCH_EMPTY', message)
+        return error_response(exc.error_code or 'DRAFT_BATCH_EMPTY', str(exc))
 
     _log_admin_action(request, action='create_draft_batch', resource_id=batch.id)
     return success_response(
@@ -552,10 +490,7 @@ def integrate_draft_batch(batch_id: str, request: Request) -> dict[str, object]:
     try:
         draft = draft_integration_service.integrate_batch(batch_id)
     except RepositoryError as exc:
-        message = str(exc)
-        if 'not found' in message:
-            return error_response('DRAFT_BATCH_EMPTY', message)
-        return error_response('AI_INTEGRATION_FAILED', message)
+        return error_response(exc.error_code or 'AI_INTEGRATION_FAILED', str(exc))
 
     _log_admin_action(request, action='integrate_draft_batch', resource_id=draft.id)
     return success_response(
@@ -598,16 +533,7 @@ def submit_draft(draft_id: str, request: Request) -> dict[str, object]:
     try:
         submission = draft_submission_service.submit_draft(draft_id)
     except RepositoryError as exc:
-        message = str(exc)
-        if 'GITHUB_TOKEN' in message or 'repository settings' in message:
-            return error_response('TOKEN_MISSING', message)
-        if 'safe submission limit' in message or 'sensitive credential-like content' in message:
-            return error_response('DRAFT_CONTENT_REJECTED', message)
-        if 'rate limit' in message:
-            return error_response('RELATED_ID_RATE_LIMITED', message)
-        if 'Draft not found' in message:
-            return error_response('GITHUB_SUBMIT_FAILED', message)
-        return error_response('GITHUB_SUBMIT_FAILED', message)
+        return error_response(exc.error_code or 'GITHUB_SUBMIT_FAILED', str(exc))
 
     _log_admin_action(request, action='submit_draft', resource_id=submission.id)
     return success_response(
