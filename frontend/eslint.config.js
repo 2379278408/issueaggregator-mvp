@@ -30,6 +30,7 @@ export default tseslint.config(
         HTMLInputElement: 'readonly',
         HTMLTextAreaElement: 'readonly',
         fetch: 'readonly',
+        AbortSignal: 'readonly',
       },
     },
   },
