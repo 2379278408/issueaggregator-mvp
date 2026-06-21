@@ -89,4 +89,21 @@ describe('api service', () => {
     expect(response.error_code).toBe('INVALID_API_RESPONSE')
     expect(response.message).toContain('HTTP 502')
   })
+
+  it('returns a failure envelope for success responses without data', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ success: true }),
+      }),
+    )
+
+    const response = await apiGet('/api/issues/submitted')
+
+    expect(response.success).toBe(false)
+    expect(response.data).toBeNull()
+    expect(response.error_code).toBe('INVALID_API_RESPONSE')
+  })
 })

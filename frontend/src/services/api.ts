@@ -1,10 +1,18 @@
-export type ApiEnvelope<T> = {
-  success: boolean
-  data: T
-  error_code?: string
-  message?: string
-  http_status?: number
-}
+export type ApiEnvelope<T> =
+  | {
+      success: true
+      data: T
+      error_code?: string
+      message?: string
+      http_status?: number
+    }
+  | {
+      success: false
+      data: null
+      error_code?: string
+      message?: string
+      http_status?: number
+    }
 
 export type SubmittedIssue = {
   issue_number: number
@@ -124,16 +132,42 @@ function isAdminPath(path: string): boolean {
   return path === adminApiBasePath || path.startsWith(`${adminApiBasePath}/`) || path.startsWith(`${adminApiBasePath}?`)
 }
 
+function isApiEnvelopeShape<T>(payload: unknown): payload is ApiEnvelope<T> {
+  if (!payload || typeof payload !== 'object') return false
+  if (!('success' in payload) || typeof payload.success !== 'boolean') return false
+  if (payload.success) return 'data' in payload
+  return true
+}
+
 async function parseResponse<T>(response: Response): Promise<ApiEnvelope<T>> {
   try {
+    const payload = await response.json()
+    if (!isApiEnvelopeShape<T>(payload)) {
+      return {
+        success: false,
+        data: null,
+        error_code: 'INVALID_API_RESPONSE',
+        message: response.ok ? '接口返回格式异常' : `接口请求失败：HTTP ${response.status}`,
+        http_status: response.status,
+      }
+    }
+
+    if (payload.success) {
+      return {
+        ...payload,
+        http_status: response.status,
+      }
+    }
+
     return {
-      ...((await response.json()) as ApiEnvelope<T>),
+      ...payload,
+      data: null,
       http_status: response.status,
     }
   } catch {
     return {
       success: false,
-      data: null as T,
+      data: null,
       error_code: 'INVALID_API_RESPONSE',
       message: response.ok ? '接口返回格式异常' : `接口请求失败：HTTP ${response.status}`,
       http_status: response.status,
@@ -148,7 +182,7 @@ async function requestApi<T>(input: string, init: RequestInit): Promise<ApiEnvel
   } catch {
     return {
       success: false,
-      data: null as T,
+      data: null,
       error_code: 'NETWORK_ERROR',
       message: '网络连接失败，请稍后重试',
     }

@@ -40,9 +40,9 @@
                 placeholder="editor-copy-button"
                 @blur="handleRelatedIdBlur"
               />
-              <small class="field-helper"
-                >用小写英文、数字和短横线，例如 github-submit-flow；空格和下划线会自动转成短横线。</small
-              >
+              <small class="field-helper">
+                用小写英文、数字和短横线，例如 github-submit-flow；空格和下划线会自动转成短横线。
+              </small>
             </label>
 
             <div v-if="showDuplicateInfo" class="duplicate-hint" :class="`duplicate-hint--${duplicateStateTone}`">
@@ -128,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import AppShell from '../components/layout/AppShell.vue'
 import IntakeInspector from '../components/common/IntakeInspector.vue'
@@ -166,7 +166,8 @@ const lastSubmission = ref<{ id: string; related_id: string; typeLabel: string; 
 const copyStateLabel = ref('复制关联标识')
 let duplicateLookupTimer: ReturnType<typeof setTimeout> | null = null
 let duplicateLookupRequestId = 0
-let suppressDuplicateLookupWatch = false
+let previousRelatedId = ''
+let skipNextDuplicateLookup = false
 
 const filters = reactive({
   keyword: '',
@@ -291,8 +292,19 @@ function handleRelatedIdBlur() {
   }
 }
 
+function clearScheduledDuplicateLookup() {
+  if (!duplicateLookupTimer) return
+  clearTimeout(duplicateLookupTimer)
+  duplicateLookupTimer = null
+}
+
 onMounted(() => {
   loadSubmittedIssues()
+})
+
+onBeforeUnmount(() => {
+  clearScheduledDuplicateLookup()
+  duplicateLookupRequestId += 1
 })
 
 async function loadSubmittedIssues() {
@@ -378,14 +390,15 @@ function lookupDuplicates(rawId: string) {
 }
 
 function scheduleDuplicateLookup(rawId: string) {
-  if (suppressDuplicateLookupWatch) {
-    suppressDuplicateLookupWatch = false
+  if (skipNextDuplicateLookup) {
+    skipNextDuplicateLookup = false
     lookupDuplicates(rawId)
     return
   }
 
-  if (duplicateLookupTimer) clearTimeout(duplicateLookupTimer)
+  clearScheduledDuplicateLookup()
   duplicateLookupTimer = setTimeout(() => {
+    duplicateLookupTimer = null
     lookupDuplicates(rawId)
   }, 200)
 }
@@ -427,6 +440,9 @@ async function submitFeedback() {
       duplicateIssues.value = []
       duplicateLookupState.value = 'idle'
       duplicateMatchKind.value = 'exact'
+      previousRelatedId = ''
+      clearScheduledDuplicateLookup()
+      duplicateLookupRequestId += 1
       copyStateLabel.value = '复制关联标识'
       await loadSubmittedIssues()
     } else {
@@ -456,20 +472,16 @@ function viewRelatedHistory() {
   loadSubmittedIssues()
 }
 
-let _previousRelatedId = ''
-
-import { watch } from 'vue'
-
 watch(
   () => form.related_id,
   (value) => {
     const normalized = normalizeRelatedId(value)
-    if (normalized !== value && !suppressDuplicateLookupWatch) {
-      suppressDuplicateLookupWatch = true
+    if (normalized !== value && !skipNextDuplicateLookup) {
+      skipNextDuplicateLookup = true
       form.related_id = normalized
     }
-    if (normalized === _previousRelatedId) return
-    _previousRelatedId = normalized
+    if (normalized === previousRelatedId) return
+    previousRelatedId = normalized
     scheduleDuplicateLookup(normalized)
   },
 )

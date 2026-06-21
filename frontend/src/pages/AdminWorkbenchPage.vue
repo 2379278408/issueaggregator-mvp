@@ -200,9 +200,9 @@
               </div>
               <div>
                 <dt>最近更新</dt>
-                  <dd>{{ draftUpdatedAtLabel }}</dd>
-                </div>
-              </dl>
+                <dd>{{ draftUpdatedAtLabel }}</dd>
+              </div>
+            </dl>
           </section>
         </aside>
       </section>
@@ -697,26 +697,40 @@ function getAdminRouteContext() {
   }
 }
 
-function syncAdminContextToRoute(): void {
+function replaceRouteQuery(entries: Record<string, string | undefined>): void {
   const nextQuery = { ...route.query }
-  if (queueStatus.value === 'pending') delete nextQuery.adminQueue
-  else nextQuery.adminQueue = queueStatus.value
-  if (!activeBatchId.value) delete nextQuery.batchId
-  else nextQuery.batchId = activeBatchId.value
-  if (!currentDraftId.value) delete nextQuery.draftId
-  else nextQuery.draftId = currentDraftId.value
+  for (const [key, value] of Object.entries(entries)) {
+    if (!value) delete nextQuery[key]
+    else nextQuery[key] = value
+  }
   void router.replace({ query: nextQuery })
 }
 
+function syncAdminContextToRoute(): void {
+  replaceRouteQuery({
+    adminQueue: queueStatus.value === 'pending' ? undefined : queueStatus.value,
+    batchId: activeBatchId.value || undefined,
+    draftId: currentDraftId.value || undefined,
+  })
+}
+
 function syncAuditFiltersToRoute(): void {
-  const nextQuery = { ...route.query }
-  if (activeAuditFilter.value === 'all') delete nextQuery.auditEventType
-  else nextQuery.auditEventType = activeAuditFilter.value
-  if (activeAuditTimeRange.value === 'all') delete nextQuery.auditTimeRange
-  else nextQuery.auditTimeRange = activeAuditTimeRange.value
-  if (!auditKeyword.value) delete nextQuery.auditKeyword
-  else nextQuery.auditKeyword = auditKeyword.value
-  void router.replace({ query: nextQuery })
+  replaceRouteQuery({
+    auditEventType: activeAuditFilter.value === 'all' ? undefined : activeAuditFilter.value,
+    auditTimeRange: activeAuditTimeRange.value === 'all' ? undefined : activeAuditTimeRange.value,
+    auditKeyword: auditKeyword.value || undefined,
+  })
+}
+
+function syncWorkspaceStateToRoute(): void {
+  replaceRouteQuery({
+    adminQueue: queueStatus.value === 'pending' ? undefined : queueStatus.value,
+    batchId: activeBatchId.value || undefined,
+    draftId: currentDraftId.value || undefined,
+    auditEventType: activeAuditFilter.value === 'all' ? undefined : activeAuditFilter.value,
+    auditTimeRange: activeAuditTimeRange.value === 'all' ? undefined : activeAuditTimeRange.value,
+    auditKeyword: auditKeyword.value || undefined,
+  })
 }
 
 function restoreAuditFiltersFromRoute(): void {
@@ -875,7 +889,12 @@ function clearAdminQueueState(): void {
   groupedItems.value = []
   submittedItems.value = []
   selectedIds.value = []
+  queueStatus.value = 'pending'
+  activeAdminSection.value = 'queue'
   activeReferenceId.value = ''
+  queueContextMemory.pending = { selectedIds: [], referenceId: '', batchId: '', draftId: '' }
+  queueContextMemory.grouped = { selectedIds: [], referenceId: '', batchId: '', draftId: '' }
+  queueContextMemory.submitted = { selectedIds: [], referenceId: '', batchId: '', draftId: '' }
 }
 
 function clearAuditState(): void {
@@ -887,17 +906,25 @@ function clearAuditState(): void {
   auditKeywordInput.value = ''
 }
 
+function clearDraftLocalState(): void {
+  Object.keys(draftLocalEdits).forEach((key) => delete draftLocalEdits[key])
+  Object.keys(draftLocalDirtyMap).forEach((key) => delete draftLocalDirtyMap[key])
+}
+
 function clearAdminWorkspaceState(): void {
   clearAdminQueueState()
   clearAuditState()
+  clearDraftLocalState()
   batchMessage.value = ''
   draftMessage.value = ''
   resetProcessingContext()
+  syncWorkspaceStateToRoute()
 }
 
 function relockAdmin(message: string): void {
   clearAdminToken()
   isAdminUnlocked.value = false
+  adminUsername.value = null
   adminDataMessage.value = ''
   adminAuthMessage.value = message
   clearAdminWorkspaceState()

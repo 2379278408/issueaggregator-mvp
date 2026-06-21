@@ -424,6 +424,12 @@ describe('AdminWorkbenchPage', () => {
   })
 
   it('returns to the login form after logout', async () => {
+    routeQuery.adminQueue = 'grouped'
+    routeQuery.batchId = 'batch_1'
+    routeQuery.draftId = 'draft_1'
+    routeQuery.auditEventType = 'admin_auth_failed'
+    routeQuery.auditTimeRange = '24h'
+    routeQuery.auditKeyword = 'batch_1'
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
@@ -440,6 +446,7 @@ describe('AdminWorkbenchPage', () => {
     expect(adminLogout).toHaveBeenCalledTimes(1)
     expect(window.sessionStorage.getItem('issueAggregatorAdminToken')).toBeNull()
     expect(wrapper.text()).toContain('管理员登录')
+    expect(routerReplace).toHaveBeenLastCalledWith({ query: {} })
   })
 
   it('clears stale queue data when a later admin refresh fails', async () => {

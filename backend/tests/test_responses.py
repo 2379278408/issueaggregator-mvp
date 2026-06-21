@@ -29,6 +29,7 @@ class ErrorResponseTests(unittest.TestCase):
     def test_struct_keys(self) -> None:
         result = error_response('NOT_FOUND', 'Not found')
         self.assertFalse(result['success'])
+        self.assertIsNone(result['data'])
         self.assertEqual(result['error_code'], 'NOT_FOUND')
         self.assertEqual(result['message'], 'Not found')
 

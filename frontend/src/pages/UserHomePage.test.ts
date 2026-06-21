@@ -1,5 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { apiGet, apiPost, buildPublicApiPath, buildSubmittedIssueSearch } = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -30,6 +30,8 @@ vi.mock('../services/api', () => ({
 }))
 
 describe('UserHomePage', () => {
+  enableAutoUnmount(afterEach)
+
   beforeEach(() => {
     vi.useRealTimers()
     apiGet.mockReset()
@@ -368,6 +370,48 @@ describe('UserHomePage', () => {
 
     expect(wrapper.text()).not.toContain('Stale duplicate issue')
     expect(wrapper.text()).not.toContain('发现同标识')
+    vi.useRealTimers()
+  })
+
+  it('ignores pending duplicate results after unmount', async () => {
+    vi.useFakeTimers()
+    let resolveDuplicateLookup: (value: unknown) => void = () => undefined
+    const pendingDuplicateLookup = new Promise((resolve) => {
+      resolveDuplicateLookup = resolve
+    })
+
+    apiGet
+      .mockResolvedValueOnce({ success: true, data: { items: [] } })
+      .mockImplementationOnce(() => pendingDuplicateLookup)
+
+    const wrapper = mount(UserHomePage, {
+      global: { stubs: { AppShell: { template: '<div><slot /></div>' } } },
+    })
+
+    await flushPromises()
+    await wrapper.get('input[placeholder="editor-copy-button"]').setValue('test')
+    await vi.advanceTimersByTimeAsync(250)
+    await flushPromises()
+
+    wrapper.unmount()
+    resolveDuplicateLookup({
+      success: true,
+      data: {
+        items: [
+          {
+            issue_number: 106,
+            title: 'Unmounted duplicate issue',
+            issue_url: 'https://github.com/org/repo/issues/106',
+            related_id: 'test',
+            type: 'bug',
+            submitted_at: '2026-06-11T10:30:00Z',
+          },
+        ],
+      },
+    })
+    await flushPromises()
+
+    expect(apiGet).toHaveBeenNthCalledWith(2, '/portal/issues/submitted/search?related_id=test')
     vi.useRealTimers()
   })
 

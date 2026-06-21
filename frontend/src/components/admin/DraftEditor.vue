@@ -47,14 +47,14 @@
     <label class="field field--full issue-body-field">
       <span>Issue 正文</span>
       <small class="field-helper">正文按摘要、背景、期望、实际和影响展开，便于直接提交到 GitHub。</small>
-        <textarea
-          ref="bodyTextarea"
-          :value="draftForm.body_markdown"
-          class="textarea textarea--editor"
-          rows="14"
-          :readonly="!currentDraftId"
-          @input="onBodyChange"
-        ></textarea>
+      <textarea
+        ref="bodyTextarea"
+        :value="draftForm.body_markdown"
+        class="textarea textarea--editor"
+        rows="14"
+        :readonly="!currentDraftId"
+        @input="onBodyChange"
+      ></textarea>
     </label>
 
     <div v-if="message" class="feedback-message draft-message">{{ message }}</div>
