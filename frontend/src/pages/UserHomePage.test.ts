@@ -372,6 +372,7 @@ describe('UserHomePage', () => {
   })
 
   it('normalizes related id before duplicate lookup', async () => {
+    vi.useFakeTimers()
     apiGet
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
       .mockResolvedValueOnce({ success: true, data: { items: [] } })
@@ -380,9 +381,10 @@ describe('UserHomePage', () => {
       global: { stubs: { AppShell: { template: '<div><slot /></div>' } } },
     })
 
+    await vi.advanceTimersByTimeAsync(0)
     await flushPromises()
     await wrapper.get('input[placeholder="editor-copy-button"]').setValue('GitHub Submit_Flow')
-    await wrapper.get('input[placeholder="editor-copy-button"]').trigger('blur')
+    await vi.advanceTimersByTimeAsync(250)
     await flushPromises()
 
     expect((wrapper.get('input[placeholder="editor-copy-button"]').element as HTMLInputElement).value).toBe(
@@ -390,6 +392,7 @@ describe('UserHomePage', () => {
     )
     expect(apiGet).toHaveBeenNthCalledWith(2, '/portal/issues/submitted/search?related_id=github-submit-flow')
     expect(apiGet).toHaveBeenNthCalledWith(3, '/portal/issues/submitted/search?keyword=github')
+    vi.useRealTimers()
   })
 
   it('keeps unsupported separators so validation can block submission', async () => {
