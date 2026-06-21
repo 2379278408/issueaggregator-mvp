@@ -177,6 +177,9 @@ backend/data/issue_aggregator.*.db-*
 *.bz2
 *.xz
 *.Z
-*.lz
-*.lzma
-*.iso
+# Local workspace artifacts
+.monkeycode/goal/
+test-results/
+e2e-pipeline.skill
+api-nav-lite/
+${HOME}/
